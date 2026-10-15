@@ -1,3 +1,4 @@
+// v0.4 — 2026-10-15
 'use client';
 
 import React, { useState } from 'react';
@@ -257,6 +258,13 @@ export function Sidebar({ orgName = 'Daycare', orgLogoUrl }: SidebarProps) {
             </>
           )}
         </div>
+
+        {/* App version */}
+        {!collapsed && (
+          <p className="text-center text-[10px] text-slate-300 pt-1 pb-0.5 select-none">
+            v{process.env.NEXT_PUBLIC_APP_VERSION}
+          </p>
+        )}
       </div>
 
       {/* Collapse toggle */}

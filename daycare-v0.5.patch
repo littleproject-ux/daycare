@@ -1,0 +1,817 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+new file mode 100644
+index 0000000..e89b38f
+--- /dev/null
++++ b/CHANGELOG.md
+@@ -0,0 +1,27 @@
++# Changelog — Daycare Management App
++
++## v0.5 — 2026-10-15
++### Diubah
++- `src/components/layout/topbar.tsx` — search bisa expand, bell link ke /notifikasi dengan badge
++
++## v0.4 — 2026-10-15
++### Baru
++- `src/app/(dashboard)/notifikasi/page.tsx` — halaman notifikasi (baru)
++- `src/app/(dashboard)/notifikasi/PageClient.tsx` — halaman notifikasi dengan search, filter, mark read, delete
++- `scripts/seed-notifikasi.mjs` — script isi data notifikasi test
++### Diubah
++- `src/app/(dashboard)/LayoutClient.tsx` — fetch nama org dari Firestore, pass ke Sidebar
++
++## v0.3 — 2026-10-15
++### Diubah
++- `src/components/layout/sidebar.tsx` — redesign total: background putih, rainbow strip, warna ramah anak
++- `next.config.ts` — tambah transpilePackages firebase untuk fix ChunkLoadError
++
++## v0.2 — sebelumnya
++### Diubah
++- `next.config.ts` — hapus cacheComponents & partialPrefetching (fix build error Vercel)
++- `src/lib/firebase.ts` — null stub pattern supaya tidak crash saat env vars kosong
++- semua `page.tsx` — hapus `export const instant` dan `export const dynamic`
++
++## v0.1 — awal
++- Setup awal project Next.js 16 + Firebase + Tailwind
+diff --git a/next.config.ts b/next.config.ts
+index a0cf0c7..610af40 100644
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -1,9 +1,7 @@
+ import type { NextConfig } from "next";
+ 
+ const nextConfig: NextConfig = {
+-  /* config options here */
+-  cacheComponents: true,
+-  partialPrefetching: true,
++  transpilePackages: ['firebase', '@firebase'],
+   turbopack: {
+     rules: {
+       "*.css": {
+diff --git a/src/app/(dashboard)/LayoutClient.tsx b/src/app/(dashboard)/LayoutClient.tsx
+new file mode 100644
+index 0000000..8d578d9
+--- /dev/null
++++ b/src/app/(dashboard)/LayoutClient.tsx
+@@ -0,0 +1,59 @@
++// v0.4 — 2026-10-15
++'use client';
++
++import React, { useEffect, useState } from 'react';
++import { useRouter } from 'next/navigation';
++import { useAuth } from '@/lib/auth-context';
++import { Sidebar } from '@/components/layout/sidebar';
++import { db } from '@/lib/firebase';
++import { doc, getDoc } from 'firebase/firestore';
++
++export default function DashboardLayout({ children }: { children: React.ReactNode }) {
++  const { isAuthenticated, isLoading, organizationId } = useAuth();
++  const router = useRouter();
++  const [orgName, setOrgName] = useState<string>('Daycare');
++  const [orgLogoUrl, setOrgLogoUrl] = useState<string | undefined>();
++
++  useEffect(() => {
++    if (!organizationId || !db) return;
++    getDoc(doc(db, 'organizations', organizationId)).then((snap) => {
++      if (snap.exists()) {
++        const data = snap.data();
++        if (data.name) setOrgName(data.name);
++        if (data.logoUrl) setOrgLogoUrl(data.logoUrl);
++      }
++    }).catch(() => {});
++  }, [organizationId]);
++
++  useEffect(() => {
++    if (!isLoading && !isAuthenticated) {
++      router.replace('/login');
++    }
++  }, [isAuthenticated, isLoading, router]);
++
++  // Always render children so Next.js instant-navigation can validate child segments.
++  // Loading / unauthenticated states are shown as full-screen overlays on top.
++  const showOverlay = isLoading || !isAuthenticated;
++
++  return (
++    <div className="flex h-screen overflow-hidden bg-[#fffcfa]">
++      {!showOverlay && <Sidebar orgName={orgName} orgLogoUrl={orgLogoUrl} />}
++      <main className="flex-1 overflow-y-auto">
++        {/* children must always be in the tree — overlaid when not ready */}
++        <div className={showOverlay ? 'invisible' : undefined}>
++          {children}
++        </div>
++      </main>
++
++      {/* Full-screen overlay while loading or redirecting */}
++      {showOverlay && (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#fffcfa]">
++          <div className="flex flex-col items-center gap-4">
++            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-coral-400 to-coral-600 animate-pulse" />
++            <p className="text-sm text-stone-400 animate-pulse">Memuat...</p>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/app/(dashboard)/notifikasi/PageClient.tsx b/src/app/(dashboard)/notifikasi/PageClient.tsx
+new file mode 100644
+index 0000000..023aacd
+--- /dev/null
++++ b/src/app/(dashboard)/notifikasi/PageClient.tsx
+@@ -0,0 +1,260 @@
++// v0.4 — 2026-10-15
++'use client';
++
++import React, { useEffect, useState } from 'react';
++import { db } from '@/lib/firebase';
++import {
++  collection,
++  query,
++  where,
++  orderBy,
++  onSnapshot,
++  doc,
++  updateDoc,
++  writeBatch,
++  Timestamp,
++} from 'firebase/firestore';
++import { useAuth } from '@/lib/auth-context';
++import {
++  Bell,
++  BellOff,
++  CheckCheck,
++  Trash2,
++  Info,
++  AlertTriangle,
++  CheckCircle,
++  XCircle,
++  Calendar,
++  Baby,
++  Wallet,
++  HeartPulse,
++  MessageCircle,
++  Search,
++  X,
++} from 'lucide-react';
++import { cn } from '@/lib/utils';
++import { formatDistanceToNow } from 'date-fns';
++import { id as localeId } from 'date-fns/locale';
++
++interface Notification {
++  id: string;
++  title: string;
++  body: string;
++  type: 'info' | 'success' | 'warning' | 'error' | 'attendance' | 'health' | 'finance' | 'message' | 'schedule' | 'child';
++  read: boolean;
++  createdAt: Timestamp;
++  link?: string;
++}
++
++const TYPE_CONFIG: Record<Notification['type'], { icon: React.ReactNode; bg: string; iconColor: string; label: string }> = {
++  info:       { icon: <Info className="h-4 w-4" />,          bg: 'bg-sky-100',     iconColor: 'text-sky-600',     label: 'Info'        },
++  success:    { icon: <CheckCircle className="h-4 w-4" />,   bg: 'bg-emerald-100', iconColor: 'text-emerald-600', label: 'Berhasil'    },
++  warning:    { icon: <AlertTriangle className="h-4 w-4" />, bg: 'bg-amber-100',   iconColor: 'text-amber-600',   label: 'Perhatian'   },
++  error:      { icon: <XCircle className="h-4 w-4" />,       bg: 'bg-rose-100',    iconColor: 'text-rose-600',    label: 'Error'       },
++  attendance: { icon: <CheckCheck className="h-4 w-4" />,    bg: 'bg-green-100',   iconColor: 'text-green-600',   label: 'Kehadiran'   },
++  health:     { icon: <HeartPulse className="h-4 w-4" />,    bg: 'bg-pink-100',    iconColor: 'text-pink-600',    label: 'Kesehatan'   },
++  finance:    { icon: <Wallet className="h-4 w-4" />,        bg: 'bg-lime-100',    iconColor: 'text-lime-600',    label: 'Keuangan'    },
++  message:    { icon: <MessageCircle className="h-4 w-4" />, bg: 'bg-violet-100',  iconColor: 'text-violet-600',  label: 'Pesan'       },
++  schedule:   { icon: <Calendar className="h-4 w-4" />,      bg: 'bg-blue-100',    iconColor: 'text-blue-600',    label: 'Jadwal'      },
++  child:      { icon: <Baby className="h-4 w-4" />,          bg: 'bg-orange-100',  iconColor: 'text-orange-600',  label: 'Data Anak'   },
++};
++
++const FILTERS = ['Semua', 'Belum Dibaca', 'Dibaca'] as const;
++type Filter = typeof FILTERS[number];
++
++export default function NotifikasiPage() {
++  const { userProfile, organizationId } = useAuth();
++  const [notifs, setNotifs] = useState<Notification[]>([]);
++  const [loading, setLoading] = useState(true);
++  const [filter, setFilter] = useState<Filter>('Semua');
++  const [search, setSearch] = useState('');
++
++  useEffect(() => {
++    if (!userProfile?.id || !organizationId || !db) {
++      setLoading(false);
++      return;
++    }
++    const q = query(
++      collection(db, 'organizations', organizationId, 'notifications'),
++      where('userId', '==', userProfile.id),
++      orderBy('createdAt', 'desc'),
++    );
++    const unsub = onSnapshot(q, (snap) => {
++      setNotifs(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Notification)));
++      setLoading(false);
++    }, () => setLoading(false));
++    return unsub;
++  }, [userProfile?.id, organizationId]);
++
++  const markRead = async (id: string) => {
++    if (!organizationId || !db) return;
++    await updateDoc(doc(db, 'organizations', organizationId, 'notifications', id), { read: true });
++  };
++
++  const markAllRead = async () => {
++    if (!organizationId || !db) return;
++    const unread = notifs.filter((n) => !n.read);
++    if (!unread.length) return;
++    const batch = writeBatch(db);
++    unread.forEach((n) => batch.update(doc(db, 'organizations', organizationId, 'notifications', n.id), { read: true }));
++    await batch.commit();
++  };
++
++  const deleteNotif = async (id: string) => {
++    if (!organizationId || !db) return;
++    const { deleteDoc } = await import('firebase/firestore');
++    await deleteDoc(doc(db, 'organizations', organizationId, 'notifications', id));
++  };
++
++  const filtered = notifs.filter((n) => {
++    if (filter === 'Belum Dibaca' && n.read) return false;
++    if (filter === 'Dibaca' && !n.read) return false;
++    if (search.trim()) {
++      const q = search.toLowerCase();
++      return n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q);
++    }
++    return true;
++  });
++
++  const unreadCount = notifs.filter((n) => !n.read).length;
++
++  return (
++    <div className="p-6 max-w-2xl mx-auto">
++      {/* Header */}
++      <div className="flex items-center justify-between mb-6">
++        <div>
++          <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
++            <Bell className="h-5 w-5 text-violet-500" />
++            Notifikasi
++            {unreadCount > 0 && (
++              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 text-xs text-white font-semibold px-1.5">
++                {unreadCount}
++              </span>
++            )}
++          </h1>
++          <p className="text-sm text-slate-400 mt-0.5">{notifs.length} total notifikasi</p>
++        </div>
++        {unreadCount > 0 && (
++          <button
++            onClick={markAllRead}
++            className="flex items-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-xl transition-colors"
++          >
++            <CheckCheck className="h-3.5 w-3.5" />
++            Tandai semua dibaca
++          </button>
++        )}
++      </div>
++
++      {/* Search */}
++      <div className="relative mb-4">
++        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
++        <input
++          type="text"
++          placeholder="Cari notifikasi..."
++          value={search}
++          onChange={(e) => setSearch(e.target.value)}
++          className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-10 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 transition-all"
++        />
++        {search && (
++          <button
++            onClick={() => setSearch('')}
++            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
++          >
++            <X className="h-4 w-4" />
++          </button>
++        )}
++      </div>
++
++      {/* Filter tabs */}
++      <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl mb-5">
++        {FILTERS.map((f) => (
++          <button
++            key={f}
++            onClick={() => setFilter(f)}
++            className={cn(
++              'flex-1 text-xs font-semibold py-1.5 rounded-xl transition-all duration-150',
++              filter === f
++                ? 'bg-white text-slate-700 shadow-sm'
++                : 'text-slate-400 hover:text-slate-600'
++            )}
++          >
++            {f}
++          </button>
++        ))}
++      </div>
++
++      {/* List */}
++      {loading ? (
++        <div className="space-y-3">
++          {[1, 2, 3].map((i) => (
++            <div key={i} className="h-20 rounded-2xl bg-slate-100 animate-pulse" />
++          ))}
++        </div>
++      ) : filtered.length === 0 ? (
++        <div className="flex flex-col items-center justify-center py-20 text-center">
++          <div className="h-14 w-14 rounded-full bg-slate-100 flex items-center justify-center mb-3">
++            <BellOff className="h-6 w-6 text-slate-400" />
++          </div>
++          <p className="text-sm font-medium text-slate-500">Tidak ada notifikasi</p>
++          <p className="text-xs text-slate-400 mt-1">
++            {filter === 'Belum Dibaca' ? 'Semua sudah dibaca 🎉' : 'Belum ada notifikasi masuk'}
++          </p>
++        </div>
++      ) : (
++        <div className="space-y-2">
++          {filtered.map((notif) => {
++            const cfg = TYPE_CONFIG[notif.type] ?? TYPE_CONFIG.info;
++            const timeAgo = notif.createdAt
++              ? formatDistanceToNow(notif.createdAt.toDate(), { addSuffix: true, locale: localeId })
++              : '';
++            return (
++              <div
++                key={notif.id}
++                onClick={() => !notif.read && markRead(notif.id)}
++                className={cn(
++                  'relative flex gap-3 rounded-2xl p-3.5 border transition-all duration-150 cursor-pointer group',
++                  notif.read
++                    ? 'bg-white border-slate-100 opacity-70 hover:opacity-100'
++                    : 'bg-white border-slate-200 shadow-sm hover:shadow-md'
++                )}
++              >
++                {/* Unread dot */}
++                {!notif.read && (
++                  <span className="absolute top-3.5 right-3.5 h-2 w-2 rounded-full bg-violet-500" />
++                )}
++
++                {/* Icon */}
++                <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', cfg.bg)}>
++                  <span className={cfg.iconColor}>{cfg.icon}</span>
++                </div>
++
++                {/* Content */}
++                <div className="flex-1 min-w-0 pr-4">
++                  <p className={cn('text-sm font-semibold truncate', notif.read ? 'text-slate-500' : 'text-slate-800')}>
++                    {notif.title}
++                  </p>
++                  <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{notif.body}</p>
++                  <div className="flex items-center gap-2 mt-1.5">
++                    <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', cfg.bg, cfg.iconColor)}>
++                      {cfg.label}
++                    </span>
++                    <span className="text-[10px] text-slate-400">{timeAgo}</span>
++                  </div>
++                </div>
++
++                {/* Delete button */}
++                <button
++                  onClick={(e) => { e.stopPropagation(); deleteNotif(notif.id); }}
++                  className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-slate-300 hover:text-rose-500"
++                  title="Hapus"
++                >
++                  <Trash2 className="h-3.5 w-3.5" />
++                </button>
++              </div>
++            );
++          })}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/app/(dashboard)/notifikasi/page.tsx b/src/app/(dashboard)/notifikasi/page.tsx
+new file mode 100644
+index 0000000..7d2299b
+--- /dev/null
++++ b/src/app/(dashboard)/notifikasi/page.tsx
+@@ -0,0 +1 @@
++export { default } from './PageClient';
+diff --git a/src/components/layout/sidebar.tsx b/src/components/layout/sidebar.tsx
+new file mode 100644
+index 0000000..cbce7d4
+--- /dev/null
++++ b/src/components/layout/sidebar.tsx
+@@ -0,0 +1,305 @@
++// v0.3 — 2026-10-15
++'use client';
++
++import React, { useState } from 'react';
++import Link from 'next/link';
++import { usePathname } from 'next/navigation';
++import {
++  LayoutDashboard,
++  Baby,
++  ClipboardList,
++  CalendarCheck,
++  FileText,
++  Users,
++  Wallet,
++  FolderOpen,
++  HeartPulse,
++  MessageCircle,
++  BarChart3,
++  Settings,
++  BookOpen,
++  ChevronLeft,
++  ChevronRight,
++  Package,
++  CalendarDays,
++  CheckSquare,
++  Bell,
++  LogOut,
++  Menu,
++  X,
++  Building2,
++} from 'lucide-react';
++import { cn } from '@/lib/utils';
++import { useAuth } from '@/lib/auth-context';
++import { UserAvatar } from '@/components/ui/avatar';
++
++interface NavItem {
++  label: string;
++  href: string;
++  icon: React.ReactNode;
++  badge?: number;
++  roles?: string[];
++  color: {
++    activeBg: string;
++    hoverBg: string;
++    iconGradient: string;
++    activeIconGradient: string;
++    text: string;
++    activeText: string;
++    ring: string;
++  };
++}
++
++interface NavSection {
++  title?: string;
++  items: NavItem[];
++}
++
++const COLORS = {
++  pink:   { activeBg: 'bg-pink-100',    hoverBg: 'hover:bg-pink-50',    iconGradient: 'from-pink-400 to-rose-400',      activeIconGradient: 'from-pink-500 to-rose-500',      text: 'text-pink-500',   activeText: 'text-pink-700',   ring: 'ring-pink-200'   },
++  sky:    { activeBg: 'bg-sky-100',     hoverBg: 'hover:bg-sky-50',     iconGradient: 'from-sky-400 to-blue-400',       activeIconGradient: 'from-sky-500 to-blue-500',       text: 'text-sky-500',    activeText: 'text-sky-700',    ring: 'ring-sky-200'    },
++  violet: { activeBg: 'bg-violet-100',  hoverBg: 'hover:bg-violet-50',  iconGradient: 'from-violet-400 to-purple-400',  activeIconGradient: 'from-violet-500 to-purple-500',  text: 'text-violet-500', activeText: 'text-violet-700', ring: 'ring-violet-200' },
++  green:  { activeBg: 'bg-emerald-100', hoverBg: 'hover:bg-emerald-50', iconGradient: 'from-emerald-400 to-teal-400',   activeIconGradient: 'from-emerald-500 to-teal-500',   text: 'text-emerald-500',activeText: 'text-emerald-700',ring: 'ring-emerald-200'},
++  blue:   { activeBg: 'bg-blue-100',    hoverBg: 'hover:bg-blue-50',    iconGradient: 'from-blue-400 to-indigo-400',    activeIconGradient: 'from-blue-500 to-indigo-500',    text: 'text-blue-500',   activeText: 'text-blue-700',   ring: 'ring-blue-200'   },
++  amber:  { activeBg: 'bg-amber-100',   hoverBg: 'hover:bg-amber-50',   iconGradient: 'from-amber-400 to-orange-400',   activeIconGradient: 'from-amber-500 to-orange-500',   text: 'text-amber-600',  activeText: 'text-amber-700',  ring: 'ring-amber-200'  },
++  orange: { activeBg: 'bg-orange-100',  hoverBg: 'hover:bg-orange-50',  iconGradient: 'from-orange-400 to-red-400',     activeIconGradient: 'from-orange-500 to-red-500',     text: 'text-orange-500', activeText: 'text-orange-700', ring: 'ring-orange-200' },
++  teal:   { activeBg: 'bg-teal-100',    hoverBg: 'hover:bg-teal-50',    iconGradient: 'from-teal-400 to-cyan-400',      activeIconGradient: 'from-teal-500 to-cyan-500',      text: 'text-teal-500',   activeText: 'text-teal-700',   ring: 'ring-teal-200'   },
++  rose:   { activeBg: 'bg-rose-100',    hoverBg: 'hover:bg-rose-50',    iconGradient: 'from-rose-400 to-pink-400',      activeIconGradient: 'from-rose-500 to-pink-500',      text: 'text-rose-500',   activeText: 'text-rose-700',   ring: 'ring-rose-200'   },
++  indigo: { activeBg: 'bg-indigo-100',  hoverBg: 'hover:bg-indigo-50',  iconGradient: 'from-indigo-400 to-violet-400',  activeIconGradient: 'from-indigo-500 to-violet-500',  text: 'text-indigo-500', activeText: 'text-indigo-700', ring: 'ring-indigo-200' },
++  lime:   { activeBg: 'bg-lime-100',    hoverBg: 'hover:bg-lime-50',    iconGradient: 'from-lime-400 to-green-400',     activeIconGradient: 'from-lime-500 to-green-500',     text: 'text-lime-600',   activeText: 'text-lime-700',   ring: 'ring-lime-200'   },
++  coral:  { activeBg: 'bg-orange-100',  hoverBg: 'hover:bg-orange-50',  iconGradient: 'from-orange-400 to-red-400',     activeIconGradient: 'from-orange-500 to-red-500',     text: 'text-orange-500', activeText: 'text-orange-700', ring: 'ring-orange-200' },
++  cyan:   { activeBg: 'bg-cyan-100',    hoverBg: 'hover:bg-cyan-50',    iconGradient: 'from-cyan-400 to-sky-400',       activeIconGradient: 'from-cyan-500 to-sky-500',       text: 'text-cyan-500',   activeText: 'text-cyan-700',   ring: 'ring-cyan-200'   },
++  purple: { activeBg: 'bg-purple-100',  hoverBg: 'hover:bg-purple-50',  iconGradient: 'from-purple-400 to-violet-400',  activeIconGradient: 'from-purple-500 to-violet-500',  text: 'text-purple-500', activeText: 'text-purple-700', ring: 'ring-purple-200' },
++};
++
++const staffNavSections: NavSection[] = [
++  {
++    title: 'UTAMA',
++    items: [
++      { label: 'Dashboard',      href: '/dashboard',      icon: <LayoutDashboard className="h-4 w-4" />, color: COLORS.sky    },
++    ],
++  },
++  {
++    title: 'ANAK & STAF',
++    items: [
++      { label: 'Data Anak',      href: '/anak',           icon: <Baby className="h-4 w-4" />,           color: COLORS.pink,   roles: ['owner','admin','caregiver'] },
++      { label: 'Pendaftaran',    href: '/pendaftaran',    icon: <ClipboardList className="h-4 w-4" />,   color: COLORS.violet, roles: ['owner','admin'] },
++      { label: 'Data Staf',      href: '/staf',           icon: <Users className="h-4 w-4" />,          color: COLORS.indigo, roles: ['owner','admin'] },
++      { label: 'Ruangan',        href: '/ruangan',        icon: <Building2 className="h-4 w-4" />,      color: COLORS.teal,   roles: ['owner','admin'] },
++    ],
++  },
++  {
++    title: 'OPERASIONAL',
++    items: [
++      { label: 'Kehadiran',      href: '/kehadiran',      icon: <CalendarCheck className="h-4 w-4" />,  color: COLORS.green,  roles: ['owner','admin','caregiver'] },
++      { label: 'Laporan Harian', href: '/laporan-harian', icon: <FileText className="h-4 w-4" />,       color: COLORS.orange, roles: ['owner','admin','caregiver'] },
++      { label: 'Jadwal & Acara', href: '/jadwal',         icon: <CalendarDays className="h-4 w-4" />,   color: COLORS.blue   },
++      { label: 'Tugas',          href: '/tugas',          icon: <CheckSquare className="h-4 w-4" />,    color: COLORS.teal   },
++    ],
++  },
++  {
++    title: 'KESEHATAN & DOKUMEN',
++    items: [
++      { label: 'Kesehatan',      href: '/kesehatan',      icon: <HeartPulse className="h-4 w-4" />,     color: COLORS.rose,  roles: ['owner','admin','caregiver'] },
++      { label: 'Dokumen',        href: '/dokumen',        icon: <FolderOpen className="h-4 w-4" />,     color: COLORS.amber, roles: ['owner','admin'] },
++    ],
++  },
++  {
++    title: 'KEUANGAN',
++    items: [
++      { label: 'Keuangan',       href: '/keuangan',       icon: <Wallet className="h-4 w-4" />,         color: COLORS.lime,   roles: ['owner','admin','finance'] },
++      { label: 'Inventaris',     href: '/inventaris',     icon: <Package className="h-4 w-4" />,        color: COLORS.cyan,   roles: ['owner','admin'] },
++    ],
++  },
++  {
++    title: 'KOMUNIKASI',
++    items: [
++      { label: 'Komunikasi',     href: '/komunikasi',     icon: <MessageCircle className="h-4 w-4" />,  color: COLORS.purple },
++      { label: 'Laporan',        href: '/laporan',        icon: <BarChart3 className="h-4 w-4" />,      color: COLORS.coral,  roles: ['owner','admin','finance','auditor'] },
++    ],
++  },
++];
++
++const parentNavSections: NavSection[] = [
++  {
++    items: [
++      { label: 'Beranda',        href: '/dashboard',           icon: <LayoutDashboard className="h-4 w-4" />, color: COLORS.sky    },
++      { label: 'Anak Saya',      href: '/anak',                icon: <Baby className="h-4 w-4" />,           color: COLORS.pink   },
++      { label: 'Laporan Harian', href: '/laporan-harian-saya', icon: <FileText className="h-4 w-4" />,       color: COLORS.orange },
++      { label: 'Kehadiran',      href: '/kehadiran-saya',      icon: <CalendarCheck className="h-4 w-4" />,  color: COLORS.green  },
++      { label: 'Tagihan',        href: '/tagihan-saya',        icon: <Wallet className="h-4 w-4" />,         color: COLORS.amber  },
++      { label: 'Pengumuman',     href: '/komunikasi',          icon: <Bell className="h-4 w-4" />,           color: COLORS.violet },
++      { label: 'Jadwal',         href: '/jadwal',              icon: <CalendarDays className="h-4 w-4" />,   color: COLORS.blue   },
++    ],
++  },
++];
++
++const bottomItems: NavItem[] = [
++  { label: 'Pengaturan', href: '/pengaturan', icon: <Settings className="h-4 w-4" />, color: COLORS.sky   },
++  { label: 'Panduan',    href: '/panduan',    icon: <BookOpen className="h-4 w-4" />, color: COLORS.green },
++];
++
++interface SidebarProps {
++  orgName?: string;
++  orgLogoUrl?: string;
++}
++
++export function Sidebar({ orgName = 'Daycare', orgLogoUrl }: SidebarProps) {
++  const [collapsed, setCollapsed] = useState(false);
++  const [mobileOpen, setMobileOpen] = useState(false);
++  const pathname = usePathname();
++  const { userProfile, role, logout } = useAuth();
++
++  const isActive = (href: string) =>
++    href === '/dashboard' ? pathname === href : pathname.startsWith(href);
++
++  const resolvedSections = role === 'parent' ? parentNavSections : staffNavSections;
++
++  const NavLink = ({ item }: { item: NavItem }) => {
++    const active = isActive(item.href);
++    return (
++      <Link
++        href={item.href}
++        onClick={() => setMobileOpen(false)}
++        title={collapsed ? item.label : undefined}
++        className={cn(
++          'flex items-center gap-2.5 rounded-2xl px-2.5 py-1.5 text-sm font-medium transition-all duration-200 group relative',
++          active
++            ? `${item.color.activeBg} ${item.color.activeText} shadow-sm ring-1 ${item.color.ring}`
++            : `text-slate-500 ${item.color.hoverBg} hover:${item.color.text}`,
++          collapsed && 'justify-center px-2'
++        )}
++      >
++        <span className={cn(
++          'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm transition-all duration-200',
++          active
++            ? `${item.color.activeIconGradient} scale-105 shadow-md`
++            : `${item.color.iconGradient} opacity-80 group-hover:opacity-100 group-hover:scale-105`
++        )}>
++          <span className="text-white [&>svg]:h-4 [&>svg]:w-4">
++            {item.icon}
++          </span>
++        </span>
++        {!collapsed && (
++          <>
++            <span className="truncate flex-1">{item.label}</span>
++            {item.badge && (
++              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 text-xs text-white font-semibold px-1.5">
++                {item.badge}
++              </span>
++            )}
++          </>
++        )}
++      </Link>
++    );
++  };
++
++  const SidebarContent = () => (
++    <div className="flex h-full flex-col border-r border-slate-200/80 bg-white">
++      {/* Decorative top rainbow strip */}
++      <div className="h-1 w-full bg-gradient-to-r from-pink-400 via-violet-400 via-sky-400 via-emerald-400 to-amber-400 shrink-0" />
++
++      {/* Logo / Org Name */}
++      <div className={cn(
++        'flex items-center gap-3 px-4 py-3.5 border-b border-slate-100',
++        collapsed && 'justify-center px-2'
++      )}>
++        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-400 to-orange-400 text-white font-bold text-sm shadow-md shadow-orange-200">
++          {orgLogoUrl
++            ? <img src={orgLogoUrl} alt={orgName} className="h-full w-full rounded-2xl object-cover" />
++            : orgName.substring(0, 2).toUpperCase()
++          }
++        </div>
++        {!collapsed && (
++          <div className="min-w-0">
++            <p className="text-sm font-bold text-slate-800 truncate">{orgName}</p>
++            <p className="text-[11px] text-slate-400 font-medium">Manajemen Daycare</p>
++          </div>
++        )}
++      </div>
++
++      {/* Nav sections */}
++      <nav className="flex-1 overflow-y-auto py-3 px-2.5 space-y-3">
++        {resolvedSections.map((section, si) => (
++          <div key={si}>
++            {section.title && !collapsed && (
++              <p className="px-2 pb-1.5 text-[9.5px] font-bold tracking-[0.14em] text-slate-400 uppercase">
++                {section.title}
++              </p>
++            )}
++            <div className="space-y-0.5">
++              {section.items.map((item) => (
++                <NavLink key={item.href} item={item} />
++              ))}
++            </div>
++          </div>
++        ))}
++      </nav>
++
++      {/* Bottom items */}
++      <div className="border-t border-slate-100 pt-2 pb-3 px-2.5 space-y-0.5">
++        {bottomItems.map((item) => <NavLink key={item.href} item={item} />)}
++
++        {/* User card */}
++        <div className={cn(
++          'flex items-center gap-2.5 rounded-2xl px-2.5 py-2 mt-2 bg-slate-50 border border-slate-200',
++          collapsed && 'justify-center px-2'
++        )}>
++          <UserAvatar src={userProfile?.photoUrl} name={userProfile?.displayName || 'User'} size="sm" />
++          {!collapsed && (
++            <>
++              <div className="flex-1 min-w-0">
++                <p className="text-xs font-semibold text-slate-700 truncate">{userProfile?.displayName}</p>
++                <p className="text-[10px] text-slate-400 capitalize">{role || 'Pengguna'}</p>
++              </div>
++              <button onClick={logout} className="text-slate-400 hover:text-rose-500 transition-colors p-0.5 rounded-lg hover:bg-rose-50" title="Keluar">
++                <LogOut className="h-4 w-4" />
++              </button>
++            </>
++          )}
++        </div>
++      </div>
++
++      {/* Collapse toggle */}
++      <button
++        onClick={() => setCollapsed(!collapsed)}
++        className="hidden lg:flex absolute -right-3 top-16 h-6 w-6 items-center justify-center rounded-full bg-white border-2 border-slate-200 text-slate-400 hover:text-violet-500 hover:border-violet-300 shadow-md transition-all duration-200"
++      >
++        {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
++      </button>
++    </div>
++  );
++
++  return (
++    <>
++      {/* Mobile button */}
++      <button
++        className="lg:hidden fixed top-4 left-4 z-50 flex h-10 w-10 items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-md text-slate-600"
++        onClick={() => setMobileOpen(!mobileOpen)}
++      >
++        {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
++      </button>
++
++      {/* Mobile overlay */}
++      {mobileOpen && (
++        <div className="lg:hidden fixed inset-0 z-40 bg-black/20 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
++      )}
++
++      {/* Mobile sidebar */}
++      <aside className={cn(
++        'lg:hidden fixed left-0 top-0 z-40 h-full w-64 shadow-2xl transform transition-transform duration-300',
++        mobileOpen ? 'translate-x-0' : '-translate-x-full'
++      )}>
++        <SidebarContent />
++      </aside>
++
++      {/* Desktop sidebar */}
++      <aside className={cn(
++        'hidden lg:flex flex-col relative h-screen transition-all duration-300 shrink-0',
++        collapsed ? 'w-16' : 'w-60'
++      )}>
++        <SidebarContent />
++      </aside>
++    </>
++  );
++}
+diff --git a/src/components/layout/topbar.tsx b/src/components/layout/topbar.tsx
+new file mode 100644
+index 0000000..f52a24a
+--- /dev/null
++++ b/src/components/layout/topbar.tsx
+@@ -0,0 +1,114 @@
++// v0.5 — 2026-10-15
++'use client';
++
++import React, { useRef, useEffect, useState } from 'react';
++import { Bell, Search, X } from 'lucide-react';
++import { useAuth } from '@/lib/auth-context';
++import { UserAvatar } from '@/components/ui/avatar';
++import { useRouter } from 'next/navigation';
++import Link from 'next/link';
++
++interface TopbarProps {
++  title?: string;
++  subtitle?: string;
++  unreadCount?: number;
++}
++
++export function Topbar({ title, subtitle, unreadCount = 0 }: TopbarProps) {
++  const { userProfile } = useAuth();
++  const router = useRouter();
++  const [searchOpen, setSearchOpen] = useState(false);
++  const [searchValue, setSearchValue] = useState('');
++  const inputRef = useRef<HTMLInputElement>(null);
++
++  useEffect(() => {
++    if (searchOpen) inputRef.current?.focus();
++  }, [searchOpen]);
++
++  const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
++    if (e.key === 'Enter' && searchValue.trim()) {
++      router.push(`/cari?q=${encodeURIComponent(searchValue.trim())}`);
++      setSearchOpen(false);
++      setSearchValue('');
++    }
++    if (e.key === 'Escape') {
++      setSearchOpen(false);
++      setSearchValue('');
++    }
++  };
++
++  return (
++    <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-white/95 backdrop-blur-md px-6 border-b border-slate-200/60"
++      style={{ boxShadow: '0 1px 0 rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.04)' }}>
++
++      <div className="flex flex-col min-w-0">
++        {title && (
++          <h1 className="text-[15px] font-bold text-slate-900 leading-tight truncate">{title}</h1>
++        )}
++        {subtitle && (
++          <p className="text-[11px] text-slate-400 truncate leading-tight">{subtitle}</p>
++        )}
++      </div>
++
++      <div className="flex items-center gap-1.5">
++
++        {/* Search — expands on click */}
++        <div className={`flex items-center gap-2 h-9 rounded-xl border transition-all duration-200 overflow-hidden
++          ${searchOpen
++            ? 'w-56 border-violet-300 bg-white ring-2 ring-violet-100 px-3'
++            : 'w-9 border-transparent bg-slate-100 hover:bg-slate-200 justify-center cursor-pointer px-0'
++          }`}
++          onClick={() => !searchOpen && setSearchOpen(true)}
++        >
++          <Search className="h-4 w-4 text-slate-400 shrink-0" />
++          {searchOpen && (
++            <>
++              <input
++                ref={inputRef}
++                type="text"
++                value={searchValue}
++                onChange={(e) => setSearchValue(e.target.value)}
++                onKeyDown={handleSearch}
++                placeholder="Cari..."
++                className="flex-1 text-sm text-slate-700 placeholder:text-slate-400 bg-transparent outline-none min-w-0"
++              />
++              {searchValue && (
++                <button onClick={() => setSearchValue('')} className="text-slate-400 hover:text-slate-600 shrink-0">
++                  <X className="h-3.5 w-3.5" />
++                </button>
++              )}
++            </>
++          )}
++        </div>
++
++        {/* Notifications — link ke halaman notifikasi */}
++        <Link
++          href="/notifikasi"
++          className="relative flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-violet-50 hover:text-violet-500 transition-colors"
++        >
++          <Bell className="h-4.5 w-4.5" />
++          {unreadCount > 0 && (
++            <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] text-white font-bold px-0.5">
++              {unreadCount > 9 ? '9+' : unreadCount}
++            </span>
++          )}
++        </Link>
++
++        {/* Divider */}
++        <div className="h-5 w-px bg-slate-200 mx-1" />
++
++        {/* User avatar */}
++        <button className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-slate-100 transition-colors">
++          <UserAvatar
++            src={userProfile?.photoUrl}
++            name={userProfile?.displayName || 'User'}
++            size="sm"
++          />
++          <span className="hidden sm:block text-xs font-medium text-slate-700 max-w-24 truncate">
++            {userProfile?.displayName?.split(' ')[0]}
++          </span>
++        </button>
++      </div>
++    </header>
++  );
++}

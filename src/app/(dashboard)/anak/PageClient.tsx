@@ -105,8 +105,7 @@ export default function AnakPage() {
     setIsLoading(true);
     try {
       const q = query(
-        collection(db, 'children'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'children'),
         orderBy('fullName')
       );
       const snap = await getDocs(q);
@@ -123,7 +122,7 @@ export default function AnakPage() {
     if (!organizationId) return;
     try {
       const dob = Timestamp.fromDate(new Date(data.dateOfBirth));
-      await addDoc(collection(db, 'children'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'children'), {
         organizationId,
         branchId: '',
         roomId: '',

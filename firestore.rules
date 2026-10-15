@@ -100,152 +100,150 @@ service cloud.firestore {
       allow delete: if isOwner() && orgId() == orgDocId;
     }
 
-    // ─── Children ────────────────────────────────────────────────────────────
+    // ─── Organizations subcollections ────────────────────────────────────────
 
-    match /children/{childId} {
-      allow read: if isSignedIn() && (
-        (isStaff() || isAuditor()) && sameOrg(resource) ||
-        // Parent can read their own children (field: parentUserId)
-        (isParent() && resource.data.parentUserId == request.auth.uid)
-      );
-      allow create: if isSignedIn() && incomingOrg() && (isAdmin() || isParent());
-      allow update: if isSignedIn() && sameOrg(resource) && (isAdmin() || isCaregiver());
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
+    match /organizations/{orgDocId} {
 
-    // ─── Attendance ──────────────────────────────────────────────────────────
+      // Children
+      match /children/{childId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (
+          isStaff() || isAuditor() ||
+          (isParent() && resource.data.parentUserId == request.auth.uid)
+        );
+        allow create: if isSignedIn() && orgId() == orgDocId && (isAdmin() || isParent());
+        allow update: if isSignedIn() && orgId() == orgDocId && (isAdmin() || isCaregiver());
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    match /attendance/{docId} {
-      allow read: if isSignedIn() && sameOrg(resource) && (isStaff() || isAuditor());
-      allow create: if isSignedIn() && incomingOrg() && isCaregiver();
-      allow update: if isSignedIn() && sameOrg(resource) && isCaregiver();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
+      // Daily Reports
+      match /dailyReports/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (
+          isStaff() || isAuditor() ||
+          (isParent() && resource.data.parentUserId == request.auth.uid)
+        );
+        allow create: if isSignedIn() && orgId() == orgDocId && isCaregiver();
+        allow update: if isSignedIn() && orgId() == orgDocId && isCaregiver();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    // ─── Daily Reports ───────────────────────────────────────────────────────
+      // Attendance
+      match /attendance/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (isStaff() || isAuditor());
+        allow create: if isSignedIn() && orgId() == orgDocId && isCaregiver();
+        allow update: if isSignedIn() && orgId() == orgDocId && isCaregiver();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    match /dailyReports/{docId} {
-      allow read: if isSignedIn() && (
-        (isStaff() || isAuditor()) && sameOrg(resource) ||
-        (isParent() && resource.data.parentUserId == request.auth.uid)
-      );
-      allow create: if isSignedIn() && incomingOrg() && isCaregiver();
-      allow update: if isSignedIn() && sameOrg(resource) && isCaregiver();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
+      // Invoices
+      match /invoices/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (
+          isFinance() || isAuditor() ||
+          (isParent() && resource.data.parentUserId == request.auth.uid)
+        );
+        allow create: if isSignedIn() && orgId() == orgDocId && isFinance();
+        allow update: if isSignedIn() && orgId() == orgDocId && isFinance();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    // ─── Invoices ────────────────────────────────────────────────────────────
+      // Payments
+      match /payments/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (isFinance() || isAuditor());
+        allow create: if isSignedIn() && orgId() == orgDocId && isFinance();
+        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    match /invoices/{docId} {
-      allow read: if isSignedIn() && (
-        (isFinance() || isAuditor()) && sameOrg(resource) ||
-        (isParent() && resource.data.parentUserId == request.auth.uid)
-      );
-      allow create: if isSignedIn() && incomingOrg() && isFinance();
-      allow update: if isSignedIn() && sameOrg(resource) && isFinance();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
+      // Staff
+      match /staff/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (isStaff() || isAuditor());
+        allow create: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    // ─── Payments ────────────────────────────────────────────────────────────
+      // Health Incidents
+      match /healthIncidents/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (
+          isStaff() || isAuditor() ||
+          (isParent() && resource.data.parentUserId == request.auth.uid)
+        );
+        allow create: if isSignedIn() && orgId() == orgDocId && isCaregiver();
+        allow update: if isSignedIn() && orgId() == orgDocId && isCaregiver();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    match /payments/{docId} {
-      allow read: if isSignedIn() && (isFinance() || isAuditor()) && sameOrg(resource);
-      allow create: if isSignedIn() && incomingOrg() && isFinance();
-      allow update: if isSignedIn() && sameOrg(resource) && isAdmin();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
+      // Announcements
+      match /announcements/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId;
+        allow create: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    // ─── Staff ───────────────────────────────────────────────────────────────
+      // Events / Schedule
+      match /events/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId;
+        allow create: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    match /staff/{docId} {
-      allow read: if isSignedIn() && (isStaff() || isAuditor()) && sameOrg(resource);
-      allow create: if isSignedIn() && incomingOrg() && isAdmin();
-      allow update: if isSignedIn() && sameOrg(resource) && isAdmin();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
+      // Documents (uploaded files metadata)
+      match /documents/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (isStaff() || isAuditor());
+        allow create: if isSignedIn() && orgId() == orgDocId && isStaff();
+        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    // ─── Health Incidents ────────────────────────────────────────────────────
+      // Tasks
+      match /tasks/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && isStaff();
+        allow create: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow update: if isSignedIn() && orgId() == orgDocId && isStaff();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    match /healthIncidents/{docId} {
-      allow read: if isSignedIn() && (
-        (isStaff() || isAuditor()) && sameOrg(resource) ||
-        (isParent() && resource.data.parentUserId == request.auth.uid)
-      );
-      allow create: if isSignedIn() && incomingOrg() && isCaregiver();
-      allow update: if isSignedIn() && sameOrg(resource) && isCaregiver();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
+      // Inventory
+      match /inventory/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (isStaff() || isAuditor());
+        allow create: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    // ─── Announcements ───────────────────────────────────────────────────────
+      // Stock Movements
+      match /stockMovements/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && (isStaff() || isAuditor());
+        allow create: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    match /announcements/{docId} {
-      allow read: if isSignedIn() && sameOrg(resource);
-      allow create: if isSignedIn() && incomingOrg() && isAdmin();
-      allow update: if isSignedIn() && sameOrg(resource) && isAdmin();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
+      // Rooms
+      match /rooms/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId;
+        allow create: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    // ─── Events / Schedule ───────────────────────────────────────────────────
+      // Branches
+      match /branches/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId;
+        allow create: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+      }
 
-    match /events/{docId} {
-      allow read: if isSignedIn() && sameOrg(resource);
-      allow create: if isSignedIn() && incomingOrg() && isAdmin();
-      allow update: if isSignedIn() && sameOrg(resource) && isAdmin();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
+      // Notifications
+      match /notifications/{docId} {
+        allow read: if isSignedIn() && orgId() == orgDocId && resource.data.userId == request.auth.uid;
+        allow create: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        allow update: if isSignedIn() && orgId() == orgDocId && resource.data.userId == request.auth.uid;
+        allow delete: if isSignedIn() && orgId() == orgDocId && resource.data.userId == request.auth.uid;
+      }
 
-    // ─── Documents (uploaded files metadata) ─────────────────────────────────
-
-    match /documents/{docId} {
-      allow read: if isSignedIn() && (isStaff() || isAuditor()) && sameOrg(resource);
-      allow create: if isSignedIn() && incomingOrg() && isStaff();
-      allow update: if isSignedIn() && sameOrg(resource) && isAdmin();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
-
-    // ─── Tasks ───────────────────────────────────────────────────────────────
-
-    match /tasks/{docId} {
-      allow read: if isSignedIn() && sameOrg(resource) && isStaff();
-      allow create: if isSignedIn() && incomingOrg() && isAdmin();
-      allow update: if isSignedIn() && sameOrg(resource) && isStaff();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
-
-    // ─── Inventory ───────────────────────────────────────────────────────────
-
-    match /inventory/{docId} {
-      allow read: if isSignedIn() && sameOrg(resource) && (isStaff() || isAuditor());
-      allow create: if isSignedIn() && incomingOrg() && isAdmin();
-      allow update: if isSignedIn() && sameOrg(resource) && isAdmin();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
-
-    // ─── Stock Movements ─────────────────────────────────────────────────────
-
-    match /stockMovements/{docId} {
-      allow read: if isSignedIn() && sameOrg(resource) && (isStaff() || isAuditor());
-      allow create: if isSignedIn() && incomingOrg() && isAdmin();
-      allow update: if isSignedIn() && sameOrg(resource) && isAdmin();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
-
-    // ─── Rooms ───────────────────────────────────────────────────────────────
-
-    match /rooms/{docId} {
-      allow read: if isSignedIn() && sameOrg(resource);
-      allow create: if isSignedIn() && incomingOrg() && isAdmin();
-      allow update: if isSignedIn() && sameOrg(resource) && isAdmin();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
-    }
-
-    // ─── Branches ────────────────────────────────────────────────────────────
-
-    match /branches/{docId} {
-      allow read: if isSignedIn() && sameOrg(resource);
-      allow create: if isSignedIn() && incomingOrg() && isAdmin();
-      allow update: if isSignedIn() && sameOrg(resource) && isAdmin();
-      allow delete: if isSignedIn() && sameOrg(resource) && isAdmin();
     }
 
   }

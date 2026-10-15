@@ -1,3 +1,4 @@
+// v0.5 — 2026-10-15
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';

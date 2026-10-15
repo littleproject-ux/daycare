@@ -1,3 +1,4 @@
+// v0.4 — 2026-10-15
 'use client';
 
 import React, { useEffect, useState } from 'react';
