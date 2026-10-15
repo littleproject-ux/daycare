@@ -57,6 +57,7 @@ export default function ChildDetailPage() {
   }, [id, organizationId]);
 
   async function loadData() {
+    if (!organizationId || !id) return;
     setIsLoading(true);
     try {
       const [childSnap, reportSnap] = await Promise.all([
