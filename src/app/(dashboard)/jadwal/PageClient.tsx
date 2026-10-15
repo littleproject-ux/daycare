@@ -64,6 +64,7 @@ export default function JadwalPage() {
   }, [organizationId, currentMonth]);
 
   async function loadEvents() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const start = Timestamp.fromDate(startOfMonth(currentMonth));
@@ -83,6 +84,7 @@ export default function JadwalPage() {
   }
 
   async function saveEvent() {
+    if (!organizationId) return;
     if (!form.title.trim()) {
       toast({ title: 'Isi judul acara', variant: 'error' });
       return;

@@ -78,6 +78,7 @@ export default function TugasPage() {
   }, [organizationId]);
 
   async function loadData() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const [taskSnap, staffSnap] = await Promise.all([
@@ -101,6 +102,7 @@ export default function TugasPage() {
   }
 
   async function saveTask() {
+    if (!organizationId) return;
     if (!form.title.trim()) {
       toast({ title: 'Isi judul tugas', variant: 'error' });
       return;
@@ -132,6 +134,7 @@ export default function TugasPage() {
   }
 
   async function updateTaskStatus(taskId: string, newStatus: TaskStatus) {
+    if (!organizationId) return;
     try {
       await updateDoc(doc(db, 'organizations', organizationId, 'tasks', taskId), {
         status: newStatus,

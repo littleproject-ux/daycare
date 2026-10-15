@@ -85,6 +85,7 @@ export default function DokumenPage() {
   }, [organizationId]);
 
   async function loadDocuments() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const snap = await getDocs(query(
@@ -100,6 +101,7 @@ export default function DokumenPage() {
   }
 
   async function uploadDocument() {
+    if (!organizationId) return;
     if (!form.file || !form.name.trim()) {
       toast({ title: 'Pilih file dan isi nama dokumen', variant: 'error' });
       return;
@@ -147,6 +149,7 @@ export default function DokumenPage() {
   }
 
   async function deleteDocument(doc_: DaycareDocument) {
+    if (!organizationId) return;
     if (!confirm(`Hapus dokumen "${doc_.name}"?`)) return;
     try {
       await deleteDoc(doc(db, 'organizations', organizationId, 'documents', doc_.id));

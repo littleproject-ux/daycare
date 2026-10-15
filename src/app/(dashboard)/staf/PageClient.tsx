@@ -78,6 +78,7 @@ export default function StafPage() {
   }, [organizationId]);
 
   async function loadStaff() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const q = query(

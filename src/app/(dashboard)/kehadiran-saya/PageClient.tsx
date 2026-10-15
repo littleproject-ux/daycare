@@ -48,6 +48,7 @@ export default function KehadiranSayaPage() {
   }, [selectedChild, currentMonth]);
 
   async function loadChildren() {
+    if (!organizationId) return;
     if (!organizationId || !user) return;
     try {
       const snap = await getDocs(query(

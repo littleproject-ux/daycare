@@ -127,6 +127,7 @@ export default function LaporanHarianSayaPage() {
   }, [children, selectedChild]);
 
   async function loadChildren() {
+    if (!organizationId) return;
     if (!organizationId || !user) return;
     try {
       const snap = await getDocs(query(
@@ -140,6 +141,7 @@ export default function LaporanHarianSayaPage() {
   }
 
   async function loadReports() {
+    if (!organizationId) return;
     if (!organizationId || !user) return;
     setIsLoading(true);
     try {

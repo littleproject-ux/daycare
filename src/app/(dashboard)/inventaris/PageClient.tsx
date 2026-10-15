@@ -68,6 +68,7 @@ export default function InventarisPage() {
   }, [organizationId]);
 
   async function loadItems() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const snap = await getDocs(query(
@@ -83,6 +84,7 @@ export default function InventarisPage() {
   }
 
   async function saveItem() {
+    if (!organizationId) return;
     if (!form.name.trim()) {
       toast({ title: 'Isi nama barang', variant: 'error' });
       return;
@@ -112,6 +114,7 @@ export default function InventarisPage() {
   }
 
   async function updateStock() {
+    if (!organizationId) return;
     if (!selectedItem) return;
     const qty = Number(stockForm.qty);
     if (!qty || qty <= 0) {

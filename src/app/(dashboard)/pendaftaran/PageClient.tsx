@@ -63,6 +63,7 @@ export default function PendaftaranPage() {
   }, [organizationId]);
 
   async function loadChildren() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const q = query(
@@ -79,6 +80,7 @@ export default function PendaftaranPage() {
   }
 
   async function updateStatus(childId: string, newStatus: ChildStatus) {
+    if (!organizationId) return;
     setIsUpdating(childId);
     try {
       await updateDoc(doc(db, 'organizations', organizationId, 'children', childId), {

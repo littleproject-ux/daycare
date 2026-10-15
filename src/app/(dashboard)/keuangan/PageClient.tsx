@@ -71,6 +71,7 @@ export default function KeuanganPage() {
   }, [organizationId]);
 
   async function loadData() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       // Load children for the form select
@@ -103,6 +104,7 @@ export default function KeuanganPage() {
   }
 
   async function createInvoice() {
+    if (!organizationId) return;
     if (!organizationId || !user) return;
     if (!formData.childId) { toast({ title: 'Pilih anak terlebih dahulu', variant: 'error' }); return; }
     if (!formData.amount || isNaN(Number(formData.amount))) { toast({ title: 'Masukkan jumlah yang valid', variant: 'error' }); return; }
@@ -157,6 +159,7 @@ export default function KeuanganPage() {
   }
 
   async function recordPayment() {
+    if (!organizationId) return;
     if (!selectedInvoice) return;
     const amount = parseFloat(payAmount);
     if (isNaN(amount) || amount <= 0) {

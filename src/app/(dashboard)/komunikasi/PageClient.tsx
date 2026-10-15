@@ -58,6 +58,7 @@ export default function KomunikasiPage() {
   }, [organizationId]);
 
   async function loadAnnouncements() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const snap = await getDocs(query(
@@ -73,6 +74,7 @@ export default function KomunikasiPage() {
   }
 
   async function saveAnnouncement() {
+    if (!organizationId) return;
     if (!form.title.trim() || !form.body.trim()) {
       toast({ title: 'Isi judul dan isi pengumuman', variant: 'error' });
       return;

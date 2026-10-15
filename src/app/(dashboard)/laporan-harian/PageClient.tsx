@@ -97,6 +97,7 @@ export default function LaporanHarianPage() {
   }, [organizationId, selectedDate]);
 
   async function loadData() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const childQ = query(

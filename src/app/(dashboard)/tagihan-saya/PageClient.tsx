@@ -40,12 +40,14 @@ const STATUS_CONFIG = {
 };
 
 function InvoiceCard({ invoice }: { invoice: Invoice }) {
+  const { organizationId } = useAuth();
   const [expanded, setExpanded] = useState(false);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loadingPay, setLoadingPay] = useState(false);
   const cfg = STATUS_CONFIG[invoice.status];
 
   async function loadPayments() {
+    if (!organizationId) return;
     if (payments.length > 0) { setExpanded(e => !e); return; }
     setLoadingPay(true);
     try {

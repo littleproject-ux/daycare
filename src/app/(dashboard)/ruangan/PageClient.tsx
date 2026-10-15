@@ -75,6 +75,7 @@ export default function RuanganPage() {
   }, [organizationId]);
 
   async function loadRooms() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const q = query(
@@ -155,6 +156,7 @@ export default function RuanganPage() {
   }
 
   async function deleteRoom(room: RoomWithMeta) {
+    if (!organizationId) return;
     try {
       await deleteDoc(doc(db, 'organizations', organizationId, 'rooms', room.id));
       toast({ title: 'Ruangan dihapus' });

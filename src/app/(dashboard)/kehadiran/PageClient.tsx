@@ -50,6 +50,7 @@ export default function KehadiranPage() {
   }, [organizationId, selectedDate]);
 
   async function loadData() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       // Load active children
@@ -83,6 +84,7 @@ export default function KehadiranPage() {
   }
 
   async function markAttendance(childId: string, status: AttendanceStatus) {
+    if (!organizationId) return;
     if (!organizationId || !user) return;
     const existing = attendance.get(childId);
 
@@ -120,6 +122,7 @@ export default function KehadiranPage() {
   }
 
   async function handleCheckIn(child: Child) {
+    if (!organizationId) return;
     if (!organizationId || !user) return;
     const existing = attendance.get(child.id);
     if (existing?.checkInTime) {
@@ -168,6 +171,7 @@ export default function KehadiranPage() {
   }
 
   async function handleCheckOut(child: Child) {
+    if (!organizationId) return;
     const att = attendance.get(child.id);
     if (!att) return;
     try {

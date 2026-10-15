@@ -42,6 +42,7 @@ export default function LaporanPage() {
   }, [organizationId, selectedMonth]);
 
   async function loadStats() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const monthStart = startOfMonth(selectedMonth);

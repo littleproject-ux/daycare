@@ -83,6 +83,7 @@ export default function KesehatanPage() {
   }, [organizationId]);
 
   async function loadData() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const [incidentSnap, childSnap] = await Promise.all([
@@ -106,6 +107,7 @@ export default function KesehatanPage() {
   }
 
   async function saveIncident() {
+    if (!organizationId) return;
     if (!form.childId || !form.description.trim()) {
       toast({ title: 'Isi semua kolom yang wajib', variant: 'error' });
       return;
