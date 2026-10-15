@@ -171,7 +171,7 @@ export default function RuanganPage() {
   const inactiveRooms = rooms.filter((r) => !r.isActive);
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#fffcfa]">
+    <div className="flex flex-col min-h-screen">
       <Topbar title="Ruangan" subtitle="Master data ruangan & kapasitas" />
       <div className="flex-1 p-4 md:p-6 max-w-5xl mx-auto w-full space-y-6">
 

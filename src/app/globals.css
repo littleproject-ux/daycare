@@ -69,22 +69,39 @@
   }
 
   body {
-    background-color: #fffcfa;
+    background-color: #f5f0eb;
     color: #1c1917;
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Custom scrollbar */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  /* Scrollbar — light areas */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #e7e5e4; border-radius: 9999px; }
-  ::-webkit-scrollbar-thumb:hover { background: #d6d3d1; }
+  ::-webkit-scrollbar-thumb { background: #d6d0ca; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #b5aca4; }
+
+  /* Scrollbar override inside dark sidebar */
+  .sidebar-dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
+  .sidebar-dark ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+  /* Focus ring */
+  :focus-visible {
+    outline: 2px solid #f95738;
+    outline-offset: 2px;
+  }
 }
 
 @layer utilities {
   .text-balance { text-wrap: balance; }
   .animation-delay-100 { animation-delay: 100ms; }
   .animation-delay-200 { animation-delay: 200ms; }
+
+  /* Glass card for light bg */
+  .glass-card {
+    background: rgba(255,255,255,0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
 }

@@ -42,9 +42,10 @@ interface NavItem {
   color: {
     activeBg: string;
     hoverBg: string;
-    iconBg: string;
-    activeIconBg: string;
+    iconGradient: string;
+    activeIconGradient: string;
     text: string;
+    activeText: string;
   };
 }
 
@@ -164,18 +165,18 @@ export function Sidebar({ orgName = 'Daycare', orgLogoUrl }: SidebarProps) {
         onClick={() => setMobileOpen(false)}
         title={collapsed ? item.label : undefined}
         className={cn(
-          'flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium transition-all group',
+          'flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium transition-all duration-150 group',
           active
-            ? `${item.color.activeBg} ${item.color.activeText}`
-            : `text-stone-500 ${item.color.hoverBg}`,
+            ? 'bg-white/10 text-white'
+            : 'text-stone-400 hover:bg-white/6 hover:text-stone-100',
           collapsed && 'justify-center px-2'
         )}
       >
         <span className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm transition-all',
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br transition-all duration-150',
           active
-            ? `${item.color.activeIconGradient} shadow-md`
-            : `${item.color.iconGradient} opacity-70 group-hover:opacity-100`
+            ? `${item.color.activeIconGradient} shadow-lg shadow-black/30 scale-105`
+            : `${item.color.iconGradient} opacity-75 group-hover:opacity-100 group-hover:scale-105`
         )}>
           <span className="text-white [&>svg]:h-4 [&>svg]:w-4">
             {item.icon}
@@ -196,13 +197,13 @@ export function Sidebar({ orgName = 'Daycare', orgLogoUrl }: SidebarProps) {
   };
 
   const SidebarContent = () => (
-    <div className="flex h-full flex-col bg-gradient-to-b from-white via-stone-50/50 to-white border-r border-stone-100">
+    <div className="sidebar-dark flex h-full flex-col border-r border-black/20" style={{ background: 'linear-gradient(180deg, #1e1410 0%, #17100c 60%, #120e09 100%)' }}>
       {/* Logo / Org Name */}
       <div className={cn(
-        'flex items-center gap-3 px-4 py-4 border-b border-stone-100',
+        'flex items-center gap-3 px-4 py-4 border-b border-white/8',
         collapsed && 'justify-center px-2'
       )}>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-coral-500 to-orange-600 text-white font-bold text-sm shadow-sm">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-coral-500 to-orange-600 text-white font-bold text-sm shadow-lg shadow-coral-900/40">
           {orgLogoUrl
             ? <img src={orgLogoUrl} alt={orgName} className="h-full w-full rounded-xl object-cover" />
             : orgName.substring(0, 2).toUpperCase()
@@ -210,18 +211,18 @@ export function Sidebar({ orgName = 'Daycare', orgLogoUrl }: SidebarProps) {
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="text-sm font-bold text-stone-900 truncate">{orgName}</p>
-            <p className="text-xs text-stone-400">Manajemen Daycare</p>
+            <p className="text-sm font-bold text-white truncate">{orgName}</p>
+            <p className="text-xs text-stone-500">Manajemen Daycare</p>
           </div>
         )}
       </div>
 
       {/* Nav sections */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-3">
+      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
         {resolvedSections.map((section, si) => (
           <div key={si}>
             {section.title && !collapsed && (
-              <p className="px-2.5 pb-1 text-[9px] font-bold tracking-widest text-stone-400 uppercase">
+              <p className="px-2.5 pb-1.5 text-[9px] font-bold tracking-[0.12em] text-stone-600 uppercase">
                 {section.title}
               </p>
             )}
@@ -235,22 +236,22 @@ export function Sidebar({ orgName = 'Daycare', orgLogoUrl }: SidebarProps) {
       </nav>
 
       {/* Bottom items */}
-      <div className="border-t border-stone-100 pt-2 pb-3 px-2 space-y-0.5">
+      <div className="border-t border-white/8 pt-2 pb-3 px-2 space-y-0.5">
         {bottomItems.map((item) => <NavLink key={item.href} item={item} />)}
 
         {/* User */}
         <div className={cn(
-          'flex items-center gap-2.5 rounded-xl px-2.5 py-2 mt-1 bg-stone-50',
+          'flex items-center gap-2.5 rounded-xl px-2.5 py-2 mt-1 bg-white/5 border border-white/6',
           collapsed && 'justify-center px-2'
         )}>
           <UserAvatar src={userProfile?.photoUrl} name={userProfile?.displayName || 'User'} size="sm" />
           {!collapsed && (
             <>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-stone-800 truncate">{userProfile?.displayName}</p>
-                <p className="text-xs text-stone-400 capitalize">{role || 'Pengguna'}</p>
+                <p className="text-xs font-semibold text-stone-200 truncate">{userProfile?.displayName}</p>
+                <p className="text-xs text-stone-600 capitalize">{role || 'Pengguna'}</p>
               </div>
-              <button onClick={logout} className="text-stone-300 hover:text-red-400 transition-colors" title="Keluar">
+              <button onClick={logout} className="text-stone-600 hover:text-red-400 transition-colors" title="Keluar">
                 <LogOut className="h-4 w-4" />
               </button>
             </>
@@ -261,7 +262,7 @@ export function Sidebar({ orgName = 'Daycare', orgLogoUrl }: SidebarProps) {
       {/* Collapse toggle */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="hidden lg:flex absolute -right-3 top-16 h-6 w-6 items-center justify-center rounded-full bg-white border border-stone-200 text-stone-400 hover:text-coral-500 hover:border-coral-300 shadow-sm transition-colors"
+        className="hidden lg:flex absolute -right-3 top-16 h-6 w-6 items-center justify-center rounded-full bg-stone-800 border border-stone-700 text-stone-500 hover:text-coral-400 hover:border-coral-600 shadow-md transition-colors"
       >
         {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
       </button>
