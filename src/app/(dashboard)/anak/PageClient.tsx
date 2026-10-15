@@ -9,6 +9,7 @@ import {
   getDocs,
   addDoc,
   updateDoc,
+  deleteDoc,
   doc,
   serverTimestamp,
   Timestamp,
@@ -49,6 +50,8 @@ import { formatTanggalPendek, hitungUmur, inisial, toDateSafe } from '@/lib/util
 import { format, parseISO } from 'date-fns';
 import { toast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { Trash2 } from 'lucide-react';
 
 const childSchema = z.object({
   fullName: z.string().min(2, 'Nama minimal 2 karakter').max(100),
@@ -63,6 +66,7 @@ const childSchema = z.object({
   emergencyContactPhone: z.string().min(8, 'Nomor telepon tidak valid'),
   emergencyContactRelation: z.string().min(2, 'Hubungan wajib diisi'),
   roomId: z.string().optional(),
+  status: z.enum(['active', 'waitlist', 'withdrawn', 'graduated']).optional(),
 });
 
 type ChildFormData = z.infer<typeof childSchema>;
@@ -82,7 +86,9 @@ const STATUS_VARIANTS: Record<ChildStatus, 'success' | 'warning' | 'secondary' |
 };
 
 export default function AnakPage() {
-  const { organizationId, can, role, user } = useAuth();
+  const { organizationId, can, role, user, hasRole } = useAuth();
+  const canDelete = hasRole('owner', 'admin'); // firestore.rules: children delete → admin
+  const [confirm, confirmEl] = useConfirm();
   const isParent = role === 'parent';
   const [children, setChildren] = useState<Child[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -150,6 +156,7 @@ export default function AnakPage() {
       emergencyContactPhone: child.emergencyContactPhone ?? '',
       emergencyContactRelation: child.emergencyContactRelation ?? '',
       roomId: child.roomId ?? '',
+      status: child.status,
     });
     setShowAddDialog(true);
   }
@@ -181,7 +188,10 @@ export default function AnakPage() {
       };
 
       if (editingChild) {
-        await updateDoc(doc(db, 'organizations', organizationId, 'children', editingChild.id), payload);
+        await updateDoc(doc(db, 'organizations', organizationId, 'children', editingChild.id), {
+          ...payload,
+          ...(data.status ? { status: data.status } : {}),
+        });
         toast({ title: 'Data anak berhasil diperbarui', variant: 'success' });
       } else {
         await addDoc(collection(db, 'organizations', organizationId, 'children'), {
@@ -203,6 +213,21 @@ export default function AnakPage() {
       toast({ title: editingChild ? 'Gagal memperbarui data' : 'Gagal menambahkan anak', variant: 'error' });
     }
   };
+
+  async function deleteChild() {
+    if (!organizationId || !editingChild) return;
+    const ok = await confirm({
+      title: 'Hapus data anak?',
+      description: `${editingChild.fullName} akan dihapus permanen. Riwayat kehadiran, laporan, dan tagihan tidak ikut terhapus. Jika anak hanya berhenti, ubah statusnya ke "Keluar".`,
+    });
+    if (!ok) return;
+    try {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'children', editingChild.id));
+      toast({ title: 'Data anak dihapus', variant: 'success' });
+      closeDialog();
+      loadChildren();
+    } catch { toast({ title: 'Gagal menghapus data anak', variant: 'error' }); }
+  }
 
   const filtered = children.filter((c) => {
     const matchSearch =
@@ -462,10 +487,22 @@ export default function AnakPage() {
               </div>
             </div>
 
+            {editingChild && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-stone-700">Status</label>
+                <Select value={watch('status') ?? editingChild.status} onValueChange={(v) => setValue('status', v as ChildStatus)}>
+                  <SelectTrigger aria-label="Status anak"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(STATUS_LABELS) as ChildStatus[]).map((st) => <SelectItem key={st} value={st}>{STATUS_LABELS[st]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-stone-700">Ruangan / Kelas</label>
               <Select value={watch('roomId') || 'none'} onValueChange={(v) => setValue('roomId', v === 'none' ? '' : v)}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Ruangan">
                   <SelectValue placeholder={rooms.length ? 'Pilih ruangan...' : 'Belum ada ruangan'} />
                 </SelectTrigger>
                 <SelectContent>
@@ -529,6 +566,11 @@ export default function AnakPage() {
             </div>
 
             <DialogFooter className="gap-2 pt-2">
+              {editingChild && canDelete && (
+                <Button type="button" variant="outline" className="sm:mr-auto text-red-600 hover:bg-red-50 gap-1" onClick={deleteChild}>
+                  <Trash2 className="h-4 w-4" /> Hapus
+                </Button>
+              )}
               <Button type="button" variant="outline" onClick={closeDialog}>
                 Batal
               </Button>
@@ -539,6 +581,7 @@ export default function AnakPage() {
           </form>
         </DialogContent>
       </Dialog>
+      {confirmEl}
     </div>
   );
 }

@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   collection, query, where, orderBy, getDocs,
-  addDoc, updateDoc, doc, serverTimestamp, Timestamp,
+  addDoc, updateDoc, deleteDoc, doc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { Topbar } from '@/components/layout/topbar';
@@ -17,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Users, Plus, Phone, Mail, Briefcase, ShieldCheck,
-  Edit2, MoreVertical, Search,
+  Edit2, MoreVertical, Search, Trash2,
 } from 'lucide-react';
 import type { Staff, StaffStatus, UserRole } from '@/types';
 import { inisial } from '@/lib/utils';
@@ -62,7 +63,25 @@ const DEFAULT_FORM: StaffFormData = {
 };
 
 export default function StafPage() {
-  const { organizationId, can } = useAuth();
+  const { organizationId, hasRole } = useAuth();
+  // firestore.rules: staff writes → owner/admin
+  const canManage = hasRole('owner', 'admin');
+  const can = (_a: string) => canManage;
+  const [confirm, confirmEl] = useConfirm();
+
+  async function deleteStaff(st: Staff) {
+    if (!organizationId) return;
+    const ok = await confirm({
+      title: 'Hapus data staf?',
+      description: `${st.fullName} akan dihapus permanen. Jika hanya berhenti bekerja, lebih baik ubah statusnya ke "Nonaktif".`,
+    });
+    if (!ok) return;
+    try {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'staff', st.id));
+      toast({ title: 'Data staf dihapus', variant: 'success' });
+      loadStaff();
+    } catch { toast({ title: 'Gagal menghapus staf', variant: 'error' }); }
+  }
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<StaffStatus | 'semua'>('semua');
@@ -181,7 +200,7 @@ export default function StafPage() {
     <div>
       <Topbar title="Staf" subtitle="Kelola data staf daycare" />
 
-      <div className="p-6 space-y-5">
+      <div className="p-4 sm:p-6 space-y-5">
         {/* Summary */}
         <div className="grid grid-cols-3 gap-3">
           {[
@@ -288,14 +307,17 @@ export default function StafPage() {
                   </div>
 
                   {can('edit') && (
-                    <div className="mt-3 pt-3 border-t border-stone-50">
+                    <div className="mt-3 pt-3 border-t border-stone-50 flex gap-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="w-full text-xs gap-1"
+                        className="flex-1 text-xs gap-1"
                         onClick={() => openEditDialog(staff)}
                       >
                         <Edit2 className="h-3.5 w-3.5" /> Edit Data
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-xs gap-1 text-red-600 hover:bg-red-50" onClick={() => deleteStaff(staff)} aria-label="Hapus staf">
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   )}
@@ -415,6 +437,7 @@ export default function StafPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {confirmEl}
     </div>
   );
 }

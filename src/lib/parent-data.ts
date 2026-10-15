@@ -1,7 +1,7 @@
 // Shared helpers for the parent portal (dashboard, laporan-harian-saya, kehadiran-saya, tagihan-saya).
 // Everything here reads the SAME schema the staff pages write (src/types/index.ts), so the
 // parent views never drift from what caregivers / finance actually save.
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toDateSafe } from '@/lib/utils';
 import type { Child, DailyReport, Invoice, AttendanceStatus, InvoiceStatus } from '@/types';
@@ -12,9 +12,10 @@ export async function loadMyChildren(organizationId: string, uid: string): Promi
     collection(db, 'organizations', organizationId, 'children'),
     where('parentUserId', '==', uid),
     where('status', '==', 'active'),
-    orderBy('fullName'),
   ));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Child);
+  // sorted client-side: equality-only queries need no composite index
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Child)
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
 export const MOOD_INFO: Record<string, { label: string; emoji: string }> = {

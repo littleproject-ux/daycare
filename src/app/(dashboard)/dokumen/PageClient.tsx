@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  collection, query, where, orderBy, getDocs, addDoc, deleteDoc,
+  collection, query, orderBy, getDocs, addDoc, updateDoc, deleteDoc,
   doc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
@@ -13,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import {
-  FileText, Upload, X, Download, Trash2, Search,
+  FileText, Upload, X, Download, Trash2, Search, Pencil,
   FolderOpen, AlertTriangle, CheckCircle2, Clock,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
@@ -61,7 +62,10 @@ function expiryStatus(expiryDate: string | null): 'ok' | 'soon' | 'expired' | nu
 }
 
 export default function DokumenPage() {
-  const { organizationId, user, can } = useAuth();
+  const { organizationId, user, can, hasRole } = useAuth();
+  const isAdmin = hasRole('owner', 'admin'); // firestore.rules: documents update/delete → admin
+  const [editingDoc, setEditingDoc] = useState<DaycareDocument | null>(null);
+  const [confirmDlg, confirmEl] = useConfirm();
   const [documents, setDocuments] = useState<DaycareDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -148,9 +152,44 @@ export default function DokumenPage() {
     }
   }
 
+  function openEdit(d: DaycareDocument) {
+    setEditingDoc(d);
+    setForm({ name: d.name ?? '', category: d.category ?? 'lainnya', description: d.description ?? '', expiryDate: d.expiryDate ?? '', file: null });
+    setShowDialog(true);
+  }
+
+  async function saveEdit() {
+    if (!organizationId || !editingDoc) return;
+    if (!form.name.trim()) { toast({ title: 'Isi nama dokumen', variant: 'error' }); return; }
+    setIsSaving(true);
+    try {
+      await updateDoc(doc(db, 'organizations', organizationId, 'documents', editingDoc.id), {
+        name: form.name.trim(),
+        category: form.category,
+        description: form.description.trim(),
+        expiryDate: form.expiryDate || null,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: 'Data dokumen diperbarui', variant: 'success' });
+      closeDialog();
+      loadDocuments();
+    } catch {
+      toast({ title: 'Gagal memperbarui dokumen', variant: 'error' });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function closeDialog() {
+    setShowDialog(false);
+    setUploadProgress(null);
+    setEditingDoc(null);
+    setForm({ name: '', category: 'organisasi', description: '', expiryDate: '', file: null });
+  }
+
   async function deleteDocument(doc_: DaycareDocument) {
     if (!organizationId) return;
-    if (!confirm(`Hapus dokumen "${doc_.name}"?`)) return;
+    if (!(await confirmDlg({ title: 'Hapus dokumen?', description: `"${doc_.name}" akan dihapus.` }))) return;
     try {
       await deleteDoc(doc(db, 'organizations', organizationId, 'documents', doc_.id));
       try { await deleteObject(ref(storage, doc_.filePath)); } catch {}
@@ -215,7 +254,7 @@ export default function DokumenPage() {
             ))}
           </div>
           {can('create') && (
-            <Button onClick={() => setShowDialog(true)} className="gap-2 shrink-0">
+            <Button onClick={() => { setEditingDoc(null); setShowDialog(true); }} className="gap-2 shrink-0">
               <Upload className="h-4 w-4" /> Unggah Dokumen
             </Button>
           )}
@@ -276,8 +315,19 @@ export default function DokumenPage() {
                       >
                         <Download className="h-3.5 w-3.5" />
                       </a>
-                      {can('delete') && (
+                      {isAdmin && (
                         <button
+                          onClick={() => openEdit(d)}
+                          className="h-8 w-8 rounded-lg border border-stone-200 flex items-center justify-center text-stone-500 hover:text-coral-600 hover:bg-coral-50"
+                          title="Edit"
+                          aria-label="Edit dokumen"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          aria-label="Hapus dokumen"
                           onClick={() => deleteDocument(d)}
                           className="h-8 w-8 rounded-lg border border-stone-200 flex items-center justify-center text-red-400 hover:bg-red-50"
                           title="Hapus"
@@ -296,11 +346,11 @@ export default function DokumenPage() {
 
       {/* Upload Dialog */}
       {showDialog && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
+        <div role="dialog" aria-modal="true" aria-label={editingDoc ? 'Edit Dokumen' : 'Unggah Dokumen'} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-stone-100">
-              <h2 className="text-base font-semibold">Unggah Dokumen</h2>
-              <button onClick={() => { setShowDialog(false); setUploadProgress(null); }} className="rounded-xl p-1.5 hover:bg-stone-100">
+              <h2 className="text-base font-semibold">{editingDoc ? 'Edit Data Dokumen' : 'Unggah Dokumen'}</h2>
+              <button aria-label="Tutup" onClick={closeDialog} className="rounded-xl p-1.5 hover:bg-stone-100">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -346,7 +396,7 @@ export default function DokumenPage() {
                   className="w-full h-10 rounded-xl border border-stone-200 px-3 text-sm focus:border-coral-400 focus:outline-none"
                 />
               </div>
-              <div>
+              {!editingDoc && <div>
                 <label className="text-sm font-medium text-stone-700 block mb-1.5">File <span className="text-red-500">*</span></label>
                 <div
                   onClick={() => fileInputRef.current?.click()}
@@ -376,7 +426,7 @@ export default function DokumenPage() {
                     if (file) setForm(f => ({ ...f, file, name: f.name || file.name.replace(/\.[^.]+$/, '') }));
                   }}
                 />
-              </div>
+              </div>}
               {uploadProgress !== null && (
                 <div>
                   <div className="flex justify-between text-xs text-stone-500 mb-1">
@@ -389,14 +439,19 @@ export default function DokumenPage() {
               )}
             </div>
             <div className="p-5 pt-0 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => { setShowDialog(false); setUploadProgress(null); }}>Batal</Button>
-              <Button onClick={uploadDocument} isLoading={isSaving} className="gap-2">
-                <Upload className="h-4 w-4" /> Unggah
-              </Button>
+              <Button variant="outline" onClick={closeDialog}>Batal</Button>
+              {editingDoc ? (
+                <Button onClick={saveEdit} isLoading={isSaving}>Simpan Perubahan</Button>
+              ) : (
+                <Button onClick={uploadDocument} isLoading={isSaving} className="gap-2">
+                  <Upload className="h-4 w-4" /> Unggah
+                </Button>
+              )}
             </div>
           </div>
         </div>
       )}
+      {confirmEl}
     </div>
   );
 }

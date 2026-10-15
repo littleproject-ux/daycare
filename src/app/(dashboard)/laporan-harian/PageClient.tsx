@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   collection, query, where, orderBy, getDocs,
-  addDoc, updateDoc, doc, serverTimestamp, Timestamp,
+  addDoc, updateDoc, deleteDoc, doc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { Topbar } from '@/components/layout/topbar';
@@ -70,15 +71,19 @@ const DEFAULT_FORM: FormData = {
   caregiverNotes: '',
 };
 
-function timeStrToTimestamp(timeStr: string): Timestamp {
+/** 'HH:mm' on the REPORT date (yyyy-MM-dd) → Timestamp; empty/invalid → null (nap is optional) */
+function timeStrToTimestamp(timeStr: string, dateStr: string): Timestamp | null {
+  if (!timeStr) return null;
   const [h, m] = timeStr.split(':').map(Number);
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
-  return Timestamp.fromDate(d);
+  if (isNaN(h) || isNaN(m)) return null;
+  const [y, mo, d] = dateStr.split('-').map(Number);
+  return Timestamp.fromDate(new Date(y, mo - 1, d, h, m, 0, 0));
 }
 
 export default function LaporanHarianPage() {
-  const { organizationId, user, can } = useAuth();
+  const { organizationId, user, can, hasRole } = useAuth();
+  const canDelete = hasRole('owner', 'admin'); // firestore.rules: dailyReports delete → admin
+  const [confirm, confirmEl] = useConfirm();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [children, setChildren] = useState<Child[]>([]);
   const [reports, setReports] = useState<Map<string, DailyReport>>(new Map());
@@ -103,10 +108,9 @@ export default function LaporanHarianPage() {
       const childQ = query(
         collection(db, 'organizations', organizationId, 'children'),
         where('status', '==', 'active'),
-        orderBy('fullName')
       );
       const childSnap = await getDocs(childQ);
-      const childList = childSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Child);
+      const childList = childSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Child).sort((a, b) => String(a.fullName ?? '').localeCompare(String(b.fullName ?? '')));
       setChildren(childList);
 
       const reportQ = query(
@@ -142,8 +146,8 @@ export default function LaporanHarianPage() {
         sarapanQty: sarapan?.quantity || 'habis',
         makanSiangQty: siang?.quantity || 'habis',
         snackQty: snack?.quantity || 'habis',
-        napStart: existing.napStart ? format(existing.napStart.toDate(), 'HH:mm') : '13:00',
-        napEnd: existing.napEnd ? format(existing.napEnd.toDate(), 'HH:mm') : '14:30',
+        napStart: existing.napStart ? format(existing.napStart.toDate(), 'HH:mm') : '',
+        napEnd: existing.napEnd ? format(existing.napEnd.toDate(), 'HH:mm') : '',
         toiletVisits: String(existing.toiletVisits || 2),
         diaperChanges: String(existing.diaperChanges || 0),
         activities: existing.activities?.join(', ') || '',
@@ -156,6 +160,17 @@ export default function LaporanHarianPage() {
       setFormData(DEFAULT_FORM);
     }
     setShowDialog(true);
+  }
+
+  async function deleteReport() {
+    if (!organizationId || !editingReport || !selectedChild) return;
+    if (!(await confirm({ title: 'Hapus laporan harian?', description: `Laporan ${selectedChild.fullName} tanggal ini akan dihapus.` }))) return;
+    try {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'dailyReports', editingReport.id));
+      toast({ title: 'Laporan dihapus', variant: 'success' });
+      setShowDialog(false);
+      loadData();
+    } catch { toast({ title: 'Gagal menghapus laporan', variant: 'error' }); }
   }
 
   async function saveReport() {
@@ -177,8 +192,8 @@ export default function LaporanHarianPage() {
           { time: '12:00', type: 'makan_siang' as const, menu: '', quantity: formData.makanSiangQty as 'habis' | 'sebagian' | 'tidak_makan' },
           { time: '15:00', type: 'snack' as const, menu: '', quantity: formData.snackQty as 'habis' | 'sebagian' | 'tidak_makan' },
         ],
-        napStart: timeStrToTimestamp(formData.napStart),
-        napEnd: timeStrToTimestamp(formData.napEnd),
+        napStart: timeStrToTimestamp(formData.napStart, dateStr),
+        napEnd: timeStrToTimestamp(formData.napEnd, dateStr),
         toiletVisits: parseInt(formData.toiletVisits) || 0,
         diaperChanges: parseInt(formData.diaperChanges) || 0,
         activities: formData.activities
@@ -225,7 +240,7 @@ export default function LaporanHarianPage() {
     <div>
       <Topbar title="Laporan Harian" subtitle="Rekap kegiatan harian setiap anak" />
 
-      <div className="p-6 space-y-5">
+      <div className="p-4 sm:p-6 space-y-5">
         {/* Date navigation */}
         <div className="flex items-center gap-3">
           <Button variant="outline" size="icon-sm" onClick={() => setSelectedDate(subDays(selectedDate, 1))}>
@@ -525,7 +540,10 @@ export default function LaporanHarianPage() {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2">
+            {editingReport && canDelete && (
+              <Button variant="outline" className="sm:mr-auto text-red-600 hover:bg-red-50" onClick={deleteReport}>Hapus Laporan</Button>
+            )}
             <Button variant="outline" onClick={() => setShowDialog(false)}>Batal</Button>
             <Button onClick={saveReport} isLoading={isSaving} className="gap-2">
               <CheckCircle2 className="h-4 w-4" />
@@ -534,6 +552,7 @@ export default function LaporanHarianPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {confirmEl}
     </div>
   );
 }

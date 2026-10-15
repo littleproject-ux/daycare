@@ -119,7 +119,7 @@ export function ParentDashboard() {
           ? getDocs(query(org('dailyReports'), where('parentUserId', '==', user.uid), where('date', '==', today)))
           : Promise.resolve(null),
         childList.length
-          ? getDocs(query(org('invoices'), where('parentUserId', '==', user.uid), orderBy('dueDate', 'desc')))
+          ? getDocs(query(org('invoices'), where('parentUserId', '==', user.uid)))
           : Promise.resolve(null),
         annP,
       ]);

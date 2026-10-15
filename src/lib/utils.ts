@@ -145,3 +145,27 @@ export function isImageFile(mimeType: string): boolean {
 export function isPdfFile(mimeType: string): boolean {
   return mimeType === 'application/pdf';
 }
+
+// ─── Terbilang (angka → kata, Bahasa Indonesia) ──────────────────────────────
+const SATUAN = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas'];
+
+function terbilangInt(n: number): string {
+  if (n < 12) return SATUAN[n];
+  if (n < 20) return `${terbilangInt(n - 10)} belas`;
+  if (n < 100) return `${terbilangInt(Math.floor(n / 10))} puluh ${terbilangInt(n % 10)}`;
+  if (n < 200) return `seratus ${terbilangInt(n - 100)}`;
+  if (n < 1000) return `${terbilangInt(Math.floor(n / 100))} ratus ${terbilangInt(n % 100)}`;
+  if (n < 2000) return `seribu ${terbilangInt(n - 1000)}`;
+  if (n < 1e6) return `${terbilangInt(Math.floor(n / 1000))} ribu ${terbilangInt(n % 1000)}`;
+  if (n < 1e9) return `${terbilangInt(Math.floor(n / 1e6))} juta ${terbilangInt(n % 1e6)}`;
+  if (n < 1e12) return `${terbilangInt(Math.floor(n / 1e9))} miliar ${terbilangInt(n % 1e9)}`;
+  return `${terbilangInt(Math.floor(n / 1e12))} triliun ${terbilangInt(n % 1e12)}`;
+}
+
+/** 1500000 → "Satu juta lima ratus ribu rupiah" */
+export function terbilang(amount: number): string {
+  const n = Math.round(Math.abs(amount));
+  if (n === 0) return 'Nol rupiah';
+  const words = terbilangInt(n).replace(/\s+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1) + ' rupiah';
+}

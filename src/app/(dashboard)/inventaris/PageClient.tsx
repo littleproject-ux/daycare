@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  collection, query, where, orderBy, getDocs, addDoc, updateDoc,
+  collection, query, where, orderBy, getDocs, addDoc, updateDoc, deleteDoc,
   doc, serverTimestamp, increment,
 } from 'firebase/firestore';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { toDateSafe } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { Topbar } from '@/components/layout/topbar';
@@ -14,7 +16,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
   Package, Plus, X, Search, AlertTriangle, ArrowUpDown,
-  TrendingUp, TrendingDown, Pencil,
+  TrendingUp, TrendingDown, Pencil, Trash2,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -46,7 +48,42 @@ const CAT_CONFIG: Record<ItemCategory, { label: string; color: string; bg: strin
 };
 
 export default function InventarisPage() {
-  const { organizationId, can } = useAuth();
+  const { organizationId, hasRole } = useAuth();
+  // firestore.rules: inventory & stockMovements writes → owner/admin
+  const canManage = hasRole('owner', 'admin');
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [movements, setMovements] = useState<{ id: string; action: StockAction; qty: number; notes: string; before: number; after: number; createdAt: unknown }[] | null>(null);
+  const [confirm, confirmEl] = useConfirm();
+  const EMPTY_FORM = { name: '', category: 'perlengkapan' as ItemCategory, unit: 'buah', stock: '0', minStock: '5', description: '' };
+
+  function openAdd() { setEditingItem(null); setForm(EMPTY_FORM); setShowAddDialog(true); }
+  function openEdit(item: InventoryItem) {
+    setEditingItem(item);
+    setForm({ name: item.name, category: item.category, unit: item.unit ?? '', stock: String(item.stock ?? 0), minStock: String(item.minStock ?? 0), description: item.description ?? '' });
+    setShowAddDialog(true);
+  }
+  async function openStock(item: InventoryItem) {
+    if (!organizationId) return;
+    setSelectedItem(item);
+    setStockForm({ action: 'tambah', qty: '1', notes: '' });
+    setShowStockDialog(true);
+    setMovements(null);
+    try {
+      const snap = await getDocs(query(collection(db, 'organizations', organizationId, 'stockMovements'), where('itemId', '==', item.id)));
+      setMovements(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as never as NonNullable<typeof movements>[number])
+        .sort((a, b) => (toDateSafe(b.createdAt)?.getTime() ?? 0) - (toDateSafe(a.createdAt)?.getTime() ?? 0))
+        .slice(0, 10));
+    } catch { setMovements([]); }
+  }
+  async function deleteItem(item: InventoryItem) {
+    if (!organizationId) return;
+    if (!(await confirm({ title: 'Hapus barang?', description: `"${item.name}" akan dihapus dari inventaris.` }))) return;
+    try {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'inventory', item.id));
+      toast({ title: 'Barang dihapus', variant: 'success' });
+      loadItems();
+    } catch { toast({ title: 'Gagal menghapus barang', variant: 'error' }); }
+  }
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -91,20 +128,27 @@ export default function InventarisPage() {
     }
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'organizations', organizationId, 'inventory'), {
-        organizationId,
-        name: form.name,
+      const base = {
+        name: form.name.trim(),
         category: form.category,
-        unit: form.unit,
-        stock: Number(form.stock),
-        minStock: Number(form.minStock),
-        description: form.description,
-        createdAt: serverTimestamp(),
+        unit: form.unit.trim() || 'buah',
+        minStock: Math.max(0, Number(form.minStock) || 0),
+        description: form.description.trim(),
         updatedAt: serverTimestamp(),
-      });
-      toast({ title: 'Barang berhasil ditambahkan', variant: 'success' });
+      };
+      if (editingItem) {
+        // stock is changed through "Ubah Stok" so every change is logged
+        await updateDoc(doc(db, 'organizations', organizationId, 'inventory', editingItem.id), base);
+        toast({ title: 'Barang diperbarui', variant: 'success' });
+      } else {
+        await addDoc(collection(db, 'organizations', organizationId, 'inventory'), {
+          ...base, organizationId, stock: Math.max(0, Number(form.stock) || 0), createdAt: serverTimestamp(),
+        });
+        toast({ title: 'Barang berhasil ditambahkan', variant: 'success' });
+      }
       setShowAddDialog(false);
-      setForm({ name: '', category: 'perlengkapan', unit: 'buah', stock: '0', minStock: '5', description: '' });
+      setEditingItem(null);
+      setForm(EMPTY_FORM);
       loadItems();
     } catch {
       toast({ title: 'Gagal menyimpan barang', variant: 'error' });
@@ -170,7 +214,7 @@ export default function InventarisPage() {
     <div>
       <Topbar title="Inventaris" subtitle="Kelola stok perlengkapan, mainan, dan bahan habis pakai" />
 
-      <div className="p-6 space-y-5">
+      <div className="p-4 sm:p-6 space-y-5">
         {/* Summary */}
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-xl p-3 bg-stone-50">
@@ -198,16 +242,16 @@ export default function InventarisPage() {
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex gap-1 bg-stone-100 rounded-xl p-1 overflow-x-auto">
-            <button onClick={() => setFilterCat('semua')} className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap ${filterCat === 'semua' ? 'bg-white shadow-sm text-stone-900' : 'text-stone-500'}`}>Semua</button>
+          <div className="flex gap-1 bg-stone-100 rounded-xl p-1 overflow-x-auto max-w-full">
+            <button onClick={() => setFilterCat('semua')} className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 ${filterCat === 'semua' ? 'bg-white shadow-sm text-stone-900' : 'text-stone-500'}`}>Semua</button>
             {(Object.keys(CAT_CONFIG) as ItemCategory[]).map(c => (
-              <button key={c} onClick={() => setFilterCat(c)} className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap ${filterCat === c ? 'bg-white shadow-sm text-stone-900' : 'text-stone-500'}`}>
+              <button key={c} onClick={() => setFilterCat(c)} className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 ${filterCat === c ? 'bg-white shadow-sm text-stone-900' : 'text-stone-500'}`}>
                 {CAT_CONFIG[c].label}
               </button>
             ))}
           </div>
-          {can('create') && (
-            <Button onClick={() => setShowAddDialog(true)} className="gap-2 shrink-0">
+          {canManage && (
+            <Button onClick={openAdd} className="gap-2 shrink-0">
               <Plus className="h-4 w-4" /> Tambah Barang
             </Button>
           )}
@@ -222,8 +266,8 @@ export default function InventarisPage() {
             <p className="text-sm">Tidak ada barang ditemukan</p>
           </div>
         ) : (
-          <div className="rounded-xl border border-stone-100 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="rounded-xl border border-stone-100 overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-stone-50">
                 <tr>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500">Nama Barang</th>
@@ -260,13 +304,19 @@ export default function InventarisPage() {
                         }
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {can('edit') && (
-                          <button
-                            onClick={() => { setSelectedItem(item); setShowStockDialog(true); }}
-                            className="flex items-center gap-1 text-xs text-coral-600 font-medium hover:text-coral-700 ml-auto"
-                          >
-                            <ArrowUpDown className="h-3.5 w-3.5" /> Ubah Stok
-                          </button>
+                        {canManage && (
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => openStock(item)}
+                              className="flex items-center gap-1 text-xs text-coral-600 font-medium hover:text-coral-700 px-2 py-1 rounded-lg hover:bg-coral-50 whitespace-nowrap"
+                            >
+                              <ArrowUpDown className="h-3.5 w-3.5" /> Ubah Stok
+                            </button>
+                            <button title="Edit" aria-label="Edit barang" onClick={() => openEdit(item)}
+                              className="p-1.5 rounded-lg text-stone-400 hover:text-coral-600 hover:bg-coral-50"><Pencil className="h-3.5 w-3.5" /></button>
+                            <button title="Hapus" aria-label="Hapus barang" onClick={() => deleteItem(item)}
+                              className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -280,10 +330,10 @@ export default function InventarisPage() {
 
       {/* Add Item Dialog */}
       {showAddDialog && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
+        <div role="dialog" aria-modal="true" aria-label={editingItem ? 'Edit Barang' : 'Tambah Barang'} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-stone-100">
-              <h2 className="text-base font-semibold">Tambah Barang</h2>
+              <h2 className="text-base font-semibold">{editingItem ? 'Edit Barang' : 'Tambah Barang'}</h2>
               <button onClick={() => setShowAddDialog(false)} className="rounded-xl p-1.5 hover:bg-stone-100"><X className="h-4 w-4" /></button>
             </div>
             <div className="p-5 space-y-4">
@@ -298,14 +348,14 @@ export default function InventarisPage() {
                 <Input label="Satuan" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} placeholder="buah, pack, lusin..." />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Input label="Stok Awal" type="number" min="0" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))} />
+                <Input label={editingItem ? 'Stok (ubah lewat "Ubah Stok")' : 'Stok Awal'} type="number" min="0" value={form.stock} disabled={!!editingItem} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))} />
                 <Input label="Stok Minimum" type="number" min="0" value={form.minStock} onChange={e => setForm(f => ({ ...f, minStock: e.target.value }))} hint="Batas peringatan" />
               </div>
               <Input label="Keterangan" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Opsional..." />
             </div>
             <div className="p-5 pt-0 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAddDialog(false)}>Batal</Button>
-              <Button onClick={saveItem} isLoading={isSaving}>Simpan</Button>
+              <Button onClick={saveItem} isLoading={isSaving}>{editingItem ? 'Simpan Perubahan' : 'Simpan'}</Button>
             </div>
           </div>
         </div>
@@ -313,8 +363,8 @@ export default function InventarisPage() {
 
       {/* Stock Update Dialog */}
       {showStockDialog && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl">
+        <div role="dialog" aria-modal="true" aria-label="Ubah Stok" className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-stone-100">
               <div>
                 <h2 className="text-base font-semibold">Ubah Stok</h2>
@@ -363,6 +413,24 @@ export default function InventarisPage() {
                   {Math.max(0, selectedItem.stock + (stockForm.action === 'tambah' ? Number(stockForm.qty) : -Number(stockForm.qty)))} {selectedItem.unit}
                 </span>
               </div>
+              <div>
+                <p className="text-xs font-semibold text-stone-500 mb-1.5">Riwayat stok terakhir</p>
+                {movements === null ? (
+                  <div className="h-8 rounded-lg bg-stone-100 animate-pulse" />
+                ) : movements.length === 0 ? (
+                  <p className="text-xs text-stone-400">Belum ada riwayat</p>
+                ) : (
+                  <ul className="space-y-1 text-xs">
+                    {movements.map((m) => (
+                      <li key={m.id} className="flex justify-between gap-2 text-stone-600">
+                        <span className={m.action === 'tambah' ? 'text-emerald-600' : 'text-red-600'}>{m.action === 'tambah' ? '+' : '−'}{m.qty}</span>
+                        <span className="flex-1 truncate">{m.notes || '-'}</span>
+                        <span className="text-stone-400">{toDateSafe(m.createdAt) ? format(toDateSafe(m.createdAt)!, 'd MMM HH:mm', { locale: localeId }) : ''}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
             <div className="p-5 pt-0 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowStockDialog(false)}>Batal</Button>
@@ -371,6 +439,7 @@ export default function InventarisPage() {
           </div>
         </div>
       )}
+      {confirmEl}
     </div>
   );
 }

@@ -233,8 +233,12 @@ export interface Attendance {
   checkOutTime?: Timestamp;
   checkInBy?: string; // staff userId
   checkOutBy?: string;
-  pickupPersonName?: string;
-  pickupPersonRelation?: string;
+  /** who brought the child in the morning */
+  dropOffPersonName?: string | null;
+  dropOffPersonRelation?: string | null;
+  /** who picked the child up */
+  pickupPersonName?: string | null;
+  pickupPersonRelation?: string | null;
   notes?: string;
   isLateArrival: boolean;
   isEarlyPickup: boolean;
@@ -398,7 +402,7 @@ export interface InvoiceItem {
   quantity: number;
   unitPrice: number;
   amount: number;
-  type: 'biaya_program' | 'registrasi' | 'deposit' | 'diskon' | 'denda' | 'lainnya';
+  type: 'biaya_program' | 'makan' | 'kegiatan' | 'antar_jemput' | 'perlengkapan' | 'registrasi' | 'deposit' | 'diskon' | 'denda' | 'lainnya';
 }
 
 export type PaymentMethod =
@@ -412,17 +416,22 @@ export interface Payment {
   organizationId: string;
   invoiceId: string;
   childId: string;
-  guardianId: string;
+  guardianId?: string;
+  /** copied from the child so the parent portal can read it (security rules) */
+  parentUserId?: string | null;
   amount: number;
-  method: PaymentMethod;
+  /** 'transfer' = legacy value written by older versions */
+  method: PaymentMethod | 'transfer';
   referenceNumber?: string;
-  paymentDate: Timestamp;
+  /** date the money was received */
+  paidAt: Timestamp;
   receivedBy: string;
   notes?: string;
   receiptUrl?: string;
-  isRefund: boolean;
+  isRefund?: boolean;
+  status?: string;
   createdAt: Timestamp;
-  updatedAt: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 // ─── Document ────────────────────────────────────────────────────────────────

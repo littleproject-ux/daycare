@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { Topbar } from '@/components/layout/topbar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Receipt, ChevronDown, ChevronUp } from 'lucide-react';
+import { Receipt, ChevronDown, ChevronUp, Printer } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { formatRupiah, toDateSafe } from '@/lib/utils';
@@ -73,7 +73,17 @@ function InvoiceCard({ invoice, childName }: { invoice: Invoice; childName?: str
               <p className="text-sm font-semibold text-stone-800 truncate">{v.title}</p>
               <Badge variant={cfg.variant} className="text-xs shrink-0">{cfg.label}</Badge>
             </div>
-            {invoice.invoiceNumber && <p className="text-xs text-stone-400">{invoice.invoiceNumber}</p>}
+            <div className="flex items-center justify-between gap-2">
+              {invoice.invoiceNumber && <p className="text-xs text-stone-400">{invoice.invoiceNumber}</p>}
+              <a
+                href={`/cetak/invoice/${invoice.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-auto inline-flex items-center gap-1 text-xs text-blue-700 hover:underline"
+              >
+                <Printer className="h-3 w-3" /> Cetak
+              </a>
+            </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-2 text-xs text-stone-500">
               <span>Jatuh tempo: {v.due ? format(v.due, 'd MMM yyyy', { locale: localeId }) : '-'}</span>
               {childName && <span>· {childName}</span>}
@@ -147,14 +157,14 @@ export default function TagihanSayaPage() {
         getDocs(query(
           collection(db, 'organizations', organizationId, 'invoices'),
           where('parentUserId', '==', user.uid),
-          orderBy('dueDate', 'desc'),
         )),
         getDocs(query(
           collection(db, 'organizations', organizationId, 'children'),
           where('parentUserId', '==', user.uid),
         )),
       ]);
-      setInvoices(invSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Invoice));
+      setInvoices(invSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Invoice)
+        .sort((a, b) => (toDateSafe(b.dueDate)?.getTime() ?? 0) - (toDateSafe(a.dueDate)?.getTime() ?? 0)));
       setChildNames(Object.fromEntries(childSnap.docs.map((d) => [d.id, (d.data().preferredName || d.data().fullName) as string])));
     } catch {
       toast({ title: 'Gagal memuat tagihan', variant: 'error' });

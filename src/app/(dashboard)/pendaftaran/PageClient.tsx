@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   collection, query, where, orderBy, getDocs,
-  updateDoc, addDoc, doc, serverTimestamp, Timestamp,
+  updateDoc, addDoc, deleteDoc, doc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { Topbar } from '@/components/layout/topbar';
@@ -16,13 +17,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   ClipboardList, CheckCircle2, XCircle, Clock, User,
-  Phone, CalendarDays, Plus,
+  Phone, CalendarDays, Plus, Pencil, Trash2, RotateCcw,
 } from 'lucide-react';
 import type { Child, ChildStatus } from '@/types';
-import { inisial, hitungUmur } from '@/lib/utils';
+import { inisial, hitungUmur, toDateSafe, formatTanggal } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
-import { id as localeId } from 'date-fns/locale';
+import { format, parseISO } from 'date-fns';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -44,17 +44,22 @@ const STATUS_FILTER_TABS = [
   { value: 'waitlist', label: 'Antrian' },
   { value: 'active', label: 'Disetujui' },
   { value: 'withdrawn', label: 'Ditolak/Keluar' },
+  { value: 'graduated', label: 'Lulus' },
 ] as const;
+type TabValue = typeof STATUS_FILTER_TABS[number]['value'];
 
 export default function PendaftaranPage() {
-  const { organizationId, can } = useAuth();
+  const { organizationId, can, hasRole } = useAuth();
+  const canDelete = hasRole('owner', 'admin');
+  const [editing, setEditing] = useState<Child | null>(null);
+  const [confirm, confirmEl] = useConfirm();
   const [children, setChildren] = useState<Child[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'waitlist' | 'active' | 'withdrawn'>('waitlist');
+  const [activeTab, setActiveTab] = useState<TabValue>('waitlist');
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
 
-  const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting } } =
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors, isSubmitting } } =
     useForm<PendaftaranFormData>({ resolver: zodResolver(pendaftaranSchema) });
 
   useEffect(() => {
@@ -96,8 +101,63 @@ export default function PendaftaranPage() {
     }
   }
 
+  function openAdd() {
+    setEditing(null);
+    reset({ fullName: '', preferredName: '', dateOfBirth: '', gender: undefined as unknown as 'L', emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelation: '', address: '', allergies: '' });
+    setShowAddDialog(true);
+  }
+  function openEdit(child: Child) {
+    setEditing(child);
+    const dob = toDateSafe(child.dateOfBirth);
+    reset({
+      fullName: child.fullName ?? '',
+      preferredName: child.preferredName ?? '',
+      dateOfBirth: dob ? format(dob, 'yyyy-MM-dd') : '',
+      gender: child.gender,
+      emergencyContactName: child.emergencyContactName ?? '',
+      emergencyContactPhone: child.emergencyContactPhone ?? '',
+      emergencyContactRelation: child.emergencyContactRelation ?? '',
+      address: child.address ?? '',
+      allergies: Array.isArray(child.allergies) ? child.allergies.join(', ') : '',
+    });
+    setShowAddDialog(true);
+  }
+  function closeDialog() { setShowAddDialog(false); setEditing(null); reset(); }
+
+  async function deleteRegistration(child: Child) {
+    if (!organizationId) return;
+    if (!(await confirm({ title: 'Hapus pendaftaran?', description: `Data ${child.fullName} akan dihapus permanen.` }))) return;
+    try {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'children', child.id));
+      toast({ title: 'Pendaftaran dihapus', variant: 'success' });
+      loadChildren();
+    } catch { toast({ title: 'Gagal menghapus pendaftaran', variant: 'error' }); }
+  }
+
   async function onSubmit(data: PendaftaranFormData) {
     if (!organizationId) return;
+    if (editing) {
+      try {
+        await updateDoc(doc(db, 'organizations', organizationId, 'children', editing.id), {
+          fullName: data.fullName,
+          preferredName: data.preferredName || null,
+          dateOfBirth: Timestamp.fromDate(parseISO(data.dateOfBirth)),
+          gender: data.gender,
+          address: data.address || null,
+          allergies: data.allergies ? data.allergies.split(',').map(s => s.trim()).filter(Boolean) : [],
+          emergencyContactName: data.emergencyContactName,
+          emergencyContactPhone: data.emergencyContactPhone,
+          emergencyContactRelation: data.emergencyContactRelation,
+          updatedAt: serverTimestamp(),
+        });
+        toast({ title: 'Pendaftaran diperbarui', variant: 'success' });
+        closeDialog();
+        loadChildren();
+      } catch {
+        toast({ title: 'Gagal memperbarui pendaftaran', variant: 'error' });
+      }
+      return;
+    }
     try {
       await addDoc(collection(db, 'organizations', organizationId, 'children'), {
         organizationId,
@@ -105,12 +165,13 @@ export default function PendaftaranPage() {
         roomId: '',
         fullName: data.fullName,
         preferredName: data.preferredName || null,
-        dateOfBirth: Timestamp.fromDate(new Date(data.dateOfBirth)),
+        dateOfBirth: Timestamp.fromDate(parseISO(data.dateOfBirth)), // local date
+        parentUserId: null,
         gender: data.gender,
         address: data.address || null,
         status: 'waitlist' as ChildStatus,
         bloodType: null,
-        allergies: data.allergies ? data.allergies.split(',').map(s => s.trim()) : [],
+        allergies: data.allergies ? data.allergies.split(',').map(s => s.trim()).filter(Boolean) : [],
         medicalNotes: null,
         emergencyContactName: data.emergencyContactName,
         emergencyContactPhone: data.emergencyContactPhone,
@@ -121,8 +182,7 @@ export default function PendaftaranPage() {
         updatedAt: serverTimestamp(),
       });
       toast({ title: 'Pendaftaran berhasil ditambahkan', variant: 'success' });
-      setShowAddDialog(false);
-      reset();
+      closeDialog();
       loadChildren();
     } catch {
       toast({ title: 'Gagal menyimpan pendaftaran', variant: 'error' });
@@ -136,18 +196,18 @@ export default function PendaftaranPage() {
     <div>
       <Topbar title="Pendaftaran" subtitle="Kelola antrian dan persetujuan pendaftaran anak" />
 
-      <div className="p-6 space-y-5">
+      <div className="p-4 sm:p-6 space-y-5">
         {/* Header action */}
         {can('create') && (
           <div className="flex justify-end">
-            <Button onClick={() => setShowAddDialog(true)} className="gap-2">
+            <Button onClick={openAdd} className="gap-2">
               <Plus className="h-4 w-4" /> Tambah Pendaftaran Baru
             </Button>
           </div>
         )}
 
         {/* Summary */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { label: 'Menunggu Persetujuan', value: children.filter(c => c.status === 'waitlist').length, color: 'text-amber-600', bg: 'bg-amber-50' },
             { label: 'Aktif', value: children.filter(c => c.status === 'active').length, color: 'text-emerald-600', bg: 'bg-emerald-50' },
@@ -212,9 +272,7 @@ export default function PendaftaranPage() {
                         <div>
                           <p className="text-sm font-semibold text-stone-900">{child.fullName}</p>
                           <p className="text-xs text-stone-400 mt-0.5">
-                            {child.dateOfBirth && hitungUmur(child.dateOfBirth instanceof Object
-                              ? (child.dateOfBirth as any).toDate?.() ?? child.dateOfBirth
-                              : new Date(child.dateOfBirth as string))}
+                            {toDateSafe(child.dateOfBirth) ? hitungUmur(toDateSafe(child.dateOfBirth)!) : '-'}
                             {' · '}
                             {child.gender === 'L' ? 'Laki-laki' : 'Perempuan'}
                           </p>
@@ -245,7 +303,7 @@ export default function PendaftaranPage() {
                         {child.createdAt && (
                           <span className="flex items-center gap-1">
                             <CalendarDays className="h-3 w-3" />
-                            Daftar: {format((child.createdAt as any).toDate(), 'd MMM yyyy', { locale: localeId })}
+                            Daftar: {formatTanggal(child.createdAt, 'd MMM yyyy')}
                           </span>
                         )}
                       </div>
@@ -256,8 +314,26 @@ export default function PendaftaranPage() {
                     </div>
                   </div>
 
+                  {can('edit') && (
+                    <div className="mt-3 pt-3 border-t border-stone-50 flex flex-wrap gap-2 justify-end">
+                      <Button size="sm" variant="outline" className="text-xs gap-1 sm:mr-auto" onClick={() => openEdit(child)}>
+                        <Pencil className="h-3.5 w-3.5" /> Edit
+                      </Button>
+                      {canDelete && (
+                        <Button size="sm" variant="outline" className="text-xs gap-1 text-red-600 hover:bg-red-50" onClick={() => deleteRegistration(child)} aria-label="Hapus pendaftaran">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {activeTab !== 'waitlist' && (
+                        <Button size="sm" variant="outline" className="text-xs gap-1" isLoading={isUpdating === child.id}
+                          onClick={() => updateStatus(child.id, 'waitlist')}>
+                          <RotateCcw className="h-3.5 w-3.5" /> Kembalikan ke Antrian
+                        </Button>
+                      )}
+                    </div>
+                  )}
                   {can('edit') && activeTab === 'waitlist' && (
-                    <div className="mt-3 pt-3 border-t border-stone-50 flex gap-2 justify-end">
+                    <div className="mt-2 flex gap-2 justify-end">
                       <Button
                         size="sm"
                         variant="outline"
@@ -286,10 +362,10 @@ export default function PendaftaranPage() {
       </div>
 
       {/* Add Registration Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog open={showAddDialog} onOpenChange={(o) => { if (!o) closeDialog(); }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Tambah Pendaftaran Baru</DialogTitle>
+            <DialogTitle>{editing ? `Edit Pendaftaran: ${editing.fullName}` : 'Tambah Pendaftaran Baru'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
             <Input label="Nama Lengkap Anak" required placeholder="Sesuai akta lahir"
@@ -301,7 +377,7 @@ export default function PendaftaranPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-stone-700">Jenis Kelamin <span className="text-red-500">*</span></label>
-              <Select onValueChange={(v) => setValue('gender', v as 'L' | 'P')}>
+              <Select value={watch('gender')} onValueChange={(v) => setValue('gender', v as 'L' | 'P')}>
                 <SelectTrigger error={errors.gender?.message}><SelectValue placeholder="Pilih..." /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="L">Laki-laki</SelectItem>
@@ -326,12 +402,13 @@ export default function PendaftaranPage() {
               </div>
             </div>
             <DialogFooter className="gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => { setShowAddDialog(false); reset(); }}>Batal</Button>
-              <Button type="submit" isLoading={isSubmitting}>Simpan Pendaftaran</Button>
+              <Button type="button" variant="outline" onClick={closeDialog}>Batal</Button>
+              <Button type="submit" isLoading={isSubmitting}>{editing ? 'Simpan Perubahan' : 'Simpan Pendaftaran'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+      {confirmEl}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { Topbar } from '@/components/layout/topbar';
@@ -129,10 +129,11 @@ export default function LaporanHarianSayaPage() {
       const snap = await getDocs(query(
         collection(db, 'organizations', organizationId, 'dailyReports'),
         where('parentUserId', '==', user.uid),
-        where('date', '>=', thirtyDaysAgo),
-        orderBy('date', 'desc'),
       ));
-      setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as DailyReport));
+      // date filter + sort client-side (no composite index needed)
+      setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as DailyReport)
+        .filter((r) => r.date >= thirtyDaysAgo)
+        .sort((a, b) => b.date.localeCompare(a.date)));
     } catch {
       toast({ title: 'Gagal memuat laporan', variant: 'error' });
     } finally {

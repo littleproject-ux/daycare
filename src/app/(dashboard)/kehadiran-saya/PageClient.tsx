@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { Topbar } from '@/components/layout/topbar';
@@ -62,11 +62,11 @@ export default function KehadiranSayaPage() {
         collection(db, 'organizations', organizationId, 'attendance'),
         where('parentUserId', '==', user.uid),
         where('childId', '==', selectedChild),
-        where('date', '>=', start),
-        where('date', '<=', end),
-        orderBy('date'),
       ));
-      setAttendance(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Attendance));
+      // month filter + sort client-side (no composite index needed)
+      setAttendance(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Attendance)
+        .filter((a) => a.date >= start && a.date <= end)
+        .sort((a, b) => a.date.localeCompare(b.date)));
     } catch {
       toast({ title: 'Gagal memuat kehadiran', variant: 'error' });
     } finally { setIsLoading(false); }

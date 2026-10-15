@@ -155,8 +155,9 @@ service cloud.firestore {
           (isParent() && resource.data.parentUserId == request.auth.uid)
         );
         allow create: if isSignedIn() && orgId() == orgDocId && isFinance();
-        allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
-        allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
+        // finance staff must be able to correct / remove a wrongly recorded payment
+        allow update: if isSignedIn() && orgId() == orgDocId && isFinance();
+        allow delete: if isSignedIn() && orgId() == orgDocId && isFinance();
       }
 
       // Staff

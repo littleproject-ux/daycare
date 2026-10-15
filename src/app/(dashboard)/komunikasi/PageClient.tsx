@@ -2,19 +2,20 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  collection, query, where, orderBy, getDocs, addDoc, serverTimestamp,
+  collection, query, orderBy, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { Topbar } from '@/components/layout/topbar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { MessageSquare, Megaphone, Plus, X, Pin } from 'lucide-react';
+import { MessageSquare, Megaphone, Plus, X, Pin, PinOff, Pencil, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
-import { inisial } from '@/lib/utils';
+import { inisial, toDateSafe } from '@/lib/utils';
 import type { Timestamp } from 'firebase/firestore';
 
 type AnnouncementAudience = 'all' | 'parents' | 'staff';
@@ -38,7 +39,11 @@ const AUDIENCE_CONFIG: Record<AnnouncementAudience, { label: string; variant: 'i
 };
 
 export default function KomunikasiPage() {
-  const { organizationId, user, can, role } = useAuth();
+  const { organizationId, user, role, hasRole, userProfile } = useAuth();
+  // firestore.rules: announcements writes → owner/admin
+  const canManage = hasRole('owner', 'admin');
+  const [editing, setEditing] = useState<Announcement | null>(null);
+  const [confirm, confirmEl] = useConfirm();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
@@ -75,6 +80,13 @@ export default function KomunikasiPage() {
     }
   }
 
+  function openAdd() { setEditing(null); setForm({ title: '', body: '', audience: 'all', isPinned: false }); setShowDialog(true); }
+  function openEdit(a: Announcement) {
+    setEditing(a);
+    setForm({ title: a.title ?? '', body: a.body ?? '', audience: a.audience ?? 'all', isPinned: !!a.isPinned });
+    setShowDialog(true);
+  }
+
   async function saveAnnouncement() {
     if (!organizationId) return;
     if (!form.title.trim() || !form.body.trim()) {
@@ -83,26 +95,49 @@ export default function KomunikasiPage() {
     }
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'organizations', organizationId, 'announcements'), {
-        organizationId,
-        title: form.title,
-        body: form.body,
-        audience: form.audience,
-        isPinned: form.isPinned,
-        authorId: user?.uid ?? '',
-        authorName: user?.displayName ?? user?.email ?? '',
-        createdAt: serverTimestamp(),
-      });
-      toast({ title: 'Pengumuman berhasil dibuat', variant: 'success' });
+      const payload = { title: form.title.trim(), body: form.body.trim(), audience: form.audience, isPinned: form.isPinned, updatedAt: serverTimestamp() };
+      if (editing) {
+        await updateDoc(doc(db, 'organizations', organizationId, 'announcements', editing.id), payload);
+        toast({ title: 'Pengumuman diperbarui', variant: 'success' });
+      } else {
+        await addDoc(collection(db, 'organizations', organizationId, 'announcements'), {
+          ...payload,
+          organizationId,
+          authorId: user?.uid ?? '',
+          authorName: userProfile?.displayName || user?.displayName || user?.email || '',
+          createdAt: serverTimestamp(),
+        });
+        toast({ title: 'Pengumuman berhasil dibuat', variant: 'success' });
+      }
       setShowDialog(false);
-      setForm({ title: '', body: '', audience: 'all', isPinned: false });
+      setEditing(null);
       loadAnnouncements();
     } catch {
-      toast({ title: 'Gagal membuat pengumuman', variant: 'error' });
+      toast({ title: 'Gagal menyimpan pengumuman', variant: 'error' });
     } finally {
       setIsSaving(false);
     }
   }
+
+  async function togglePin(a: Announcement) {
+    if (!organizationId) return;
+    try {
+      await updateDoc(doc(db, 'organizations', organizationId, 'announcements', a.id), { isPinned: !a.isPinned, updatedAt: serverTimestamp() });
+      setAnnouncements((prev) => prev.map((x) => (x.id === a.id ? { ...x, isPinned: !a.isPinned } : x)));
+    } catch { toast({ title: 'Gagal mengubah sematan', variant: 'error' }); }
+  }
+
+  async function deleteAnnouncement(a: Announcement) {
+    if (!organizationId) return;
+    if (!(await confirm({ title: 'Hapus pengumuman?', description: `"${a.title}" akan dihapus.` }))) return;
+    try {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'announcements', a.id));
+      toast({ title: 'Pengumuman dihapus', variant: 'success' });
+      loadAnnouncements();
+    } catch { toast({ title: 'Gagal menghapus pengumuman', variant: 'error' }); }
+  }
+
+  const cardActions = canManage ? { onEdit: openEdit, onDelete: deleteAnnouncement, onTogglePin: togglePin } : undefined;
 
   const pinned = announcements.filter(a => a.isPinned);
   const regular = announcements.filter(a => !a.isPinned);
@@ -111,7 +146,7 @@ export default function KomunikasiPage() {
     <div>
       <Topbar title="Komunikasi" subtitle="Pengumuman dan pesan untuk orang tua dan staf" />
 
-      <div className="p-6 space-y-5">
+      <div className="p-4 sm:p-6 space-y-5">
         {/* Tabs */}
         <div className="flex items-center gap-3">
           <div className="flex gap-1 bg-stone-100 rounded-xl p-1 max-w-full overflow-x-auto">
@@ -128,8 +163,8 @@ export default function KomunikasiPage() {
               <MessageSquare className="h-3.5 w-3.5" /> Pesan
             </button>
           </div>
-          {activeTab === 'pengumuman' && can('create') && (
-            <Button onClick={() => setShowDialog(true)} className="gap-2 ml-auto">
+          {activeTab === 'pengumuman' && canManage && (
+            <Button onClick={openAdd} className="gap-2 ml-auto shrink-0">
               <Plus className="h-4 w-4" /> Buat Pengumuman
             </Button>
           )}
@@ -151,7 +186,7 @@ export default function KomunikasiPage() {
                 <div>
                   <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">📌 Disematkan</p>
                   <div className="space-y-3">
-                    {pinned.map(a => <AnnouncementCard key={a.id} announcement={a} />)}
+                    {pinned.map(a => <AnnouncementCard key={a.id} announcement={a} actions={cardActions} />)}
                   </div>
                 </div>
               )}
@@ -159,7 +194,7 @@ export default function KomunikasiPage() {
                 <div>
                   {pinned.length > 0 && <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Terbaru</p>}
                   <div className="space-y-3">
-                    {regular.map(a => <AnnouncementCard key={a.id} announcement={a} />)}
+                    {regular.map(a => <AnnouncementCard key={a.id} announcement={a} actions={cardActions} />)}
                   </div>
                 </div>
               )}
@@ -176,10 +211,10 @@ export default function KomunikasiPage() {
 
       {/* Dialog */}
       {showDialog && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl">
+        <div role="dialog" aria-modal="true" aria-label={editing ? 'Edit Pengumuman' : 'Buat Pengumuman'} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-stone-100">
-              <h2 className="text-base font-semibold">Buat Pengumuman</h2>
+              <h2 className="text-base font-semibold">{editing ? 'Edit Pengumuman' : 'Buat Pengumuman'}</h2>
               <button onClick={() => setShowDialog(false)} className="rounded-xl p-1.5 hover:bg-stone-100">
                 <X className="h-4 w-4" />
               </button>
@@ -210,6 +245,7 @@ export default function KomunikasiPage() {
                   {(Object.keys(AUDIENCE_CONFIG) as AnnouncementAudience[]).map(a => (
                     <button
                       key={a}
+                      type="button"
                       onClick={() => setForm(f => ({ ...f, audience: a }))}
                       className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors border ${
                         form.audience === a
@@ -234,16 +270,24 @@ export default function KomunikasiPage() {
             </div>
             <div className="p-5 pt-0 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowDialog(false)}>Batal</Button>
-              <Button onClick={saveAnnouncement} isLoading={isSaving}>Publikasikan</Button>
+              <Button onClick={saveAnnouncement} isLoading={isSaving}>{editing ? 'Simpan Perubahan' : 'Publikasikan'}</Button>
             </div>
           </div>
         </div>
       )}
+      {confirmEl}
     </div>
   );
 }
 
-function AnnouncementCard({ announcement }: { announcement: Announcement }) {
+interface CardActions {
+  onEdit: (a: Announcement) => void;
+  onDelete: (a: Announcement) => void;
+  onTogglePin: (a: Announcement) => void;
+}
+
+function AnnouncementCard({ announcement, actions }: { announcement: Announcement; actions?: CardActions }) {
+  const created = toDateSafe(announcement.createdAt);
   return (
     <Card>
       <CardContent className="p-4">
@@ -253,7 +297,7 @@ function AnnouncementCard({ announcement }: { announcement: Announcement }) {
               {announcement.isPinned && <Pin className="h-3.5 w-3.5 text-coral-500 shrink-0" />}
               <p className="text-sm font-semibold text-stone-900">{announcement.title}</p>
             </div>
-            <p className="text-sm text-stone-600 leading-relaxed">{announcement.body}</p>
+            <p className="text-sm text-stone-600 leading-relaxed whitespace-pre-line">{announcement.body}</p>
             <div className="mt-2 flex items-center gap-3 text-xs text-stone-400">
               <span className="flex items-center gap-1">
                 <div className="h-4 w-4 rounded-full bg-coral-100 text-coral-500 flex items-center justify-center text-[9px] font-bold">
@@ -261,16 +305,27 @@ function AnnouncementCard({ announcement }: { announcement: Announcement }) {
                 </div>
                 {announcement.authorName || 'Admin'}
               </span>
-              <span>
-                {announcement.createdAt
-                  ? formatDistanceToNow(announcement.createdAt.toDate(), { addSuffix: true, locale: localeId })
-                  : '–'}
-              </span>
+              <span>{created ? formatDistanceToNow(created, { addSuffix: true, locale: localeId }) : '–'}</span>
             </div>
           </div>
-          <Badge variant={AUDIENCE_CONFIG[announcement.audience].variant} className="shrink-0">
-            {AUDIENCE_CONFIG[announcement.audience].label}
-          </Badge>
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <Badge variant={(AUDIENCE_CONFIG[announcement.audience] ?? AUDIENCE_CONFIG.all).variant}>
+              {(AUDIENCE_CONFIG[announcement.audience] ?? AUDIENCE_CONFIG.all).label}
+            </Badge>
+            {actions && (
+              <div className="flex gap-1">
+                <button title={announcement.isPinned ? 'Lepas sematan' : 'Sematkan'} aria-label={announcement.isPinned ? 'Lepas sematan' : 'Sematkan'}
+                  onClick={() => actions.onTogglePin(announcement)}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-coral-600 hover:bg-coral-50">
+                  {announcement.isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                </button>
+                <button title="Edit" aria-label="Edit pengumuman" onClick={() => actions.onEdit(announcement)}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-coral-600 hover:bg-coral-50"><Pencil className="h-3.5 w-3.5" /></button>
+                <button title="Hapus" aria-label="Hapus pengumuman" onClick={() => actions.onDelete(announcement)}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

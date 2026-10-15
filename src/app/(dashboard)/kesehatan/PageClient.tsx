@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  collection, query, where, orderBy, getDocs, addDoc, serverTimestamp, Timestamp,
+  collection, query, where, orderBy, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
@@ -11,13 +11,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import {
-  Heart, Plus, AlertTriangle, Pill, Thermometer, FileText, X,
+  Heart, Plus, AlertTriangle, Pill, Thermometer, FileText, X, Pencil, Trash2, BellRing,
 } from 'lucide-react';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { toast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import type { Child } from '@/types';
-import { inisial } from '@/lib/utils';
+import { inisial, toDateSafe } from '@/lib/utils';
 
 type IncidentType = 'injury' | 'illness' | 'allergic_reaction' | 'medication' | 'other';
 type IncidentSeverity = 'minor' | 'moderate' | 'severe';
@@ -58,7 +59,10 @@ const SEVERITY_LABEL: Record<IncidentSeverity, string> = {
 };
 
 export default function KesehatanPage() {
-  const { organizationId, user, can } = useAuth();
+  const { organizationId, user, can, hasRole } = useAuth();
+  const canDelete = hasRole('owner', 'admin'); // firestore.rules: delete → admin
+  const [editing, setEditing] = useState<HealthIncident | null>(null);
+  const [confirm, confirmEl] = useConfirm();
   const [incidents, setIncidents] = useState<HealthIncident[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,7 +70,7 @@ export default function KesehatanPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [filterType, setFilterType] = useState<IncidentType | 'semua'>('semua');
 
-  const [form, setForm] = useState({
+  const emptyForm = () => ({
     childId: '',
     type: 'injury' as IncidentType,
     severity: 'minor' as IncidentSeverity,
@@ -76,6 +80,38 @@ export default function KesehatanPage() {
     occurredDate: format(new Date(), 'yyyy-MM-dd'),
     occurredTime: format(new Date(), 'HH:mm'),
   });
+  const [form, setForm] = useState(emptyForm);
+
+  function openAdd() { setEditing(null); setForm(emptyForm()); setShowDialog(true); }
+  function openEdit(i: HealthIncident) {
+    const d = toDateSafe(i.occurredAt) ?? new Date();
+    setEditing(i);
+    setForm({
+      childId: i.childId, type: i.type, severity: i.severity, description: i.description ?? '',
+      actionTaken: i.actionTaken ?? '', parentNotified: !!i.parentNotified,
+      occurredDate: format(d, 'yyyy-MM-dd'), occurredTime: format(d, 'HH:mm'),
+    });
+    setShowDialog(true);
+  }
+
+  async function markNotified(i: HealthIncident) {
+    if (!organizationId) return;
+    try {
+      await updateDoc(doc(db, 'organizations', organizationId, 'healthIncidents', i.id), { parentNotified: true, updatedAt: serverTimestamp() });
+      setIncidents((prev) => prev.map((x) => (x.id === i.id ? { ...x, parentNotified: true } : x)));
+      toast({ title: 'Ditandai sudah diberitahu', variant: 'success' });
+    } catch { toast({ title: 'Gagal memperbarui insiden', variant: 'error' }); }
+  }
+
+  async function deleteIncident(i: HealthIncident) {
+    if (!organizationId) return;
+    if (!(await confirm({ title: 'Hapus catatan insiden?', description: `Insiden ${i.childName} akan dihapus permanen.` }))) return;
+    try {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'healthIncidents', i.id));
+      toast({ title: 'Insiden dihapus', variant: 'success' });
+      loadData();
+    } catch { toast({ title: 'Gagal menghapus insiden', variant: 'error' }); }
+  }
 
   useEffect(() => {
     if (!organizationId) return;
@@ -94,11 +130,10 @@ export default function KesehatanPage() {
         getDocs(query(
           collection(db, 'organizations', organizationId, 'children'),
           where('status', '==', 'active'),
-          orderBy('fullName')
         )),
       ]);
       setIncidents(incidentSnap.docs.map(d => ({ id: d.id, ...d.data() }) as HealthIncident));
-      setChildren(childSnap.docs.map(d => ({ id: d.id, ...d.data() }) as Child));
+      setChildren(childSnap.docs.map(d => ({ id: d.id, ...d.data() }) as Child).sort((a, b) => String(a.fullName ?? '').localeCompare(String(b.fullName ?? ''))));
     } catch {
       toast({ title: 'Gagal memuat data kesehatan', variant: 'error' });
     } finally {
@@ -115,28 +150,30 @@ export default function KesehatanPage() {
     setIsSaving(true);
     try {
       const child = children.find(c => c.id === form.childId);
-      const occurredAt = Timestamp.fromDate(new Date(`${form.occurredDate}T${form.occurredTime}`));
-      await addDoc(collection(db, 'organizations', organizationId, 'healthIncidents'), {
-        organizationId,
+      const occurredAt = Timestamp.fromDate(parseISO(`${form.occurredDate}T${form.occurredTime || '00:00'}`));
+      const payload = {
         childId: form.childId,
-        childName: child?.fullName ?? '',
+        childName: child?.fullName ?? editing?.childName ?? '',
+        parentUserId: child?.parentUserId ?? null,
         type: form.type,
         severity: form.severity,
-        description: form.description,
-        actionTaken: form.actionTaken,
+        description: form.description.trim(),
+        actionTaken: form.actionTaken.trim(),
         parentNotified: form.parentNotified,
         occurredAt,
-        staffId: user?.uid ?? '',
-        createdAt: serverTimestamp(),
-      });
-      toast({ title: 'Insiden berhasil dicatat', variant: 'success' });
+        updatedAt: serverTimestamp(),
+      };
+      if (editing) {
+        await updateDoc(doc(db, 'organizations', organizationId, 'healthIncidents', editing.id), payload);
+        toast({ title: 'Insiden diperbarui', variant: 'success' });
+      } else {
+        await addDoc(collection(db, 'organizations', organizationId, 'healthIncidents'), {
+          ...payload, organizationId, staffId: user?.uid ?? '', createdAt: serverTimestamp(),
+        });
+        toast({ title: 'Insiden berhasil dicatat', variant: 'success' });
+      }
       setShowDialog(false);
-      setForm({
-        childId: '', type: 'injury', severity: 'minor', description: '', actionTaken: '',
-        parentNotified: false,
-        occurredDate: format(new Date(), 'yyyy-MM-dd'),
-        occurredTime: format(new Date(), 'HH:mm'),
-      });
+      setEditing(null);
       loadData();
     } catch {
       toast({ title: 'Gagal menyimpan insiden', variant: 'error' });
@@ -151,9 +188,9 @@ export default function KesehatanPage() {
     <div>
       <Topbar title="Kesehatan & Keselamatan" subtitle="Catat dan pantau insiden kesehatan anak" />
 
-      <div className="p-6 space-y-5">
+      <div className="p-4 sm:p-6 space-y-5">
         {/* Summary */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'Total Insiden', value: incidents.length, color: 'text-stone-700', bg: 'bg-stone-50' },
             { label: 'Parah', value: incidents.filter(i => i.severity === 'severe').length, color: 'text-red-600', bg: 'bg-red-50' },
@@ -187,7 +224,7 @@ export default function KesehatanPage() {
             ))}
           </div>
           {can('create') && (
-            <Button onClick={() => setShowDialog(true)} className="gap-2 ml-auto shrink-0">
+            <Button onClick={openAdd} className="gap-2 ml-auto shrink-0">
               <Plus className="h-4 w-4" /> Catat Insiden
             </Button>
           )}
@@ -217,10 +254,10 @@ export default function KesehatanPage() {
                         <div>
                           <p className="text-sm font-semibold text-stone-900">{incident.childName}</p>
                           <p className="text-xs text-stone-400">
-                            {format(incident.occurredAt.toDate(), "d MMM yyyy 'pukul' HH:mm", { locale: localeId })}
+                            {toDateSafe(incident.occurredAt) ? format(toDateSafe(incident.occurredAt)!, "d MMM yyyy 'pukul' HH:mm", { locale: localeId }) : '-'}
                           </p>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
                           <Badge variant={SEVERITY_BADGE[incident.severity]}>{SEVERITY_LABEL[incident.severity]}</Badge>
                           <span className={`flex items-center gap-1 text-xs font-medium ${TYPE_CONFIG[incident.type].color}`}>
                             {TYPE_CONFIG[incident.type].icon}
@@ -234,9 +271,25 @@ export default function KesehatanPage() {
                           <span className="font-medium">Tindakan:</span> {incident.actionTaken}
                         </p>
                       )}
-                      {incident.parentNotified && (
-                        <p className="mt-1 text-xs text-emerald-600 font-medium">✓ Orang tua sudah diberitahu</p>
-                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {incident.parentNotified ? (
+                          <p className="text-xs text-emerald-600 font-medium">✓ Orang tua sudah diberitahu</p>
+                        ) : can('edit') ? (
+                          <button onClick={() => markNotified(incident)} className="flex items-center gap-1 text-xs text-amber-600 hover:underline">
+                            <BellRing className="h-3 w-3" /> Belum diberitahu — tandai sudah
+                          </button>
+                        ) : <p className="text-xs text-amber-600">Orang tua belum diberitahu</p>}
+                        <span className="ml-auto flex gap-1">
+                          {can('edit') && (
+                            <button title="Edit" aria-label="Edit insiden" onClick={() => openEdit(incident)}
+                              className="p-1.5 rounded-lg text-stone-400 hover:text-coral-600 hover:bg-coral-50"><Pencil className="h-3.5 w-3.5" /></button>
+                          )}
+                          {canDelete && (
+                            <button title="Hapus" aria-label="Hapus insiden" onClick={() => deleteIncident(incident)}
+                              className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                          )}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -248,11 +301,13 @@ export default function KesehatanPage() {
 
       {/* Dialog */}
       {showDialog && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+        <div role="dialog" aria-modal="true" aria-label={editing ? 'Edit Insiden' : 'Catat Insiden'}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4"
+          onKeyDown={(e) => { if (e.key === 'Escape') setShowDialog(false); }}>
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl">
             <div className="flex items-center justify-between p-5 border-b border-stone-100">
-              <h2 className="text-base font-semibold">Catat Insiden Kesehatan</h2>
-              <button onClick={() => setShowDialog(false)} className="rounded-xl p-1.5 hover:bg-stone-100">
+              <h2 className="text-base font-semibold">{editing ? 'Edit Insiden Kesehatan' : 'Catat Insiden Kesehatan'}</h2>
+              <button aria-label="Tutup" onClick={() => setShowDialog(false)} className="rounded-xl p-1.5 hover:bg-stone-100">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -266,6 +321,7 @@ export default function KesehatanPage() {
                 >
                   <option value="">Pilih anak...</option>
                   {children.map(c => <option key={c.id} value={c.id}>{c.fullName}</option>)}
+                  {editing && !children.some(c => c.id === editing.childId) && <option value={editing.childId}>{editing.childName}</option>}
                 </select>
               </div>
 
@@ -351,11 +407,12 @@ export default function KesehatanPage() {
             </div>
             <div className="p-5 pt-3 border-t border-stone-100 flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowDialog(false)}>Batal</Button>
-              <Button onClick={saveIncident} isLoading={isSaving}>Simpan Insiden</Button>
+              <Button onClick={saveIncident} isLoading={isSaving}>{editing ? 'Simpan Perubahan' : 'Simpan Insiden'}</Button>
             </div>
           </div>
         </div>
       )}
+      {confirmEl}
     </div>
   );
 }

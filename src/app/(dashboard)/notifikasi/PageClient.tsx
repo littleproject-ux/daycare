@@ -77,10 +77,10 @@ export default function NotifikasiPage() {
     const q = query(
       collection(db, 'organizations', organizationId, 'notifications'),
       where('userId', '==', userProfile.id),
-      orderBy('createdAt', 'desc'),
     );
     const unsub = onSnapshot(q, (snap) => {
-      setNotifs(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Notification)));
+      setNotifs(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Notification))
+        .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0)));
       setLoading(false);
     }, () => setLoading(false));
     return unsub;
