@@ -84,7 +84,6 @@ export default function KehadiranPage() {
   }
 
   async function markAttendance(childId: string, status: AttendanceStatus) {
-    if (!organizationId) return;
     if (!organizationId || !user) return;
     const existing = attendance.get(childId);
 
@@ -97,11 +96,13 @@ export default function KehadiranPage() {
         });
       } else {
         // Create new
+        const child = children.find((c) => c.id === childId);
         await addDoc(collection(db, 'organizations', organizationId, 'attendance'), {
           organizationId,
           childId,
-          branchId: '',
-          roomId: '',
+          parentUserId: child?.parentUserId ?? null,
+          branchId: child?.branchId || '',
+          roomId: child?.roomId || '',
           date: dateStr,
           status,
           checkInTime: status === 'hadir' ? Timestamp.now() : null,
@@ -122,7 +123,6 @@ export default function KehadiranPage() {
   }
 
   async function handleCheckIn(child: Child) {
-    if (!organizationId) return;
     if (!organizationId || !user) return;
     const existing = attendance.get(child.id);
     if (existing?.checkInTime) {
@@ -145,6 +145,7 @@ export default function KehadiranPage() {
         await addDoc(collection(db, 'organizations', organizationId, 'attendance'), {
           organizationId,
           childId: child.id,
+          parentUserId: child.parentUserId ?? null,
           branchId: child.branchId || '',
           roomId: child.roomId || '',
           date: dateStr,
@@ -204,7 +205,7 @@ export default function KehadiranPage() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1 text-center">
-            <p className="text-sm font-semibold text-stone-900">
+            <p className="text-sm font-semibold text-stone-900" suppressHydrationWarning>
               {format(selectedDate, 'EEEE, d MMMM yyyy', { locale: localeId })}
             </p>
             {dateStr === dateToYMD(new Date()) && (
@@ -215,7 +216,9 @@ export default function KehadiranPage() {
             variant="outline"
             size="icon-sm"
             onClick={() => setSelectedDate(addDays(selectedDate, 1))}
-            disabled={selectedDate >= new Date()}
+            // compare calendar days, not milliseconds: no recording for future dates
+            disabled={dateStr >= dateToYMD(new Date())}
+            suppressHydrationWarning
           >
             <ChevronRight className="h-4 w-4" />
           </Button>

@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Timestamp } from 'firebase/firestore';
 
@@ -20,18 +20,32 @@ export function formatRupiah(amount: number): string {
 }
 
 // ─── Date ────────────────────────────────────────────────────────────────────
+/**
+ * Convert any date-like value (Firestore Timestamp, 'yyyy-MM-dd' string, ISO string,
+ * Date, millis, {seconds}) to a valid Date — or null. Never throws.
+ * 'yyyy-MM-dd' is parsed as LOCAL date (new Date('2026-10-15') would be UTC midnight).
+ */
+export function toDateSafe(v: unknown): Date | null {
+  if (v === null || v === undefined || v === '') return null;
+  let d: Date | null = null;
+  if (v instanceof Date) d = v;
+  else if (typeof v === 'object' && typeof (v as { toDate?: unknown }).toDate === 'function') {
+    d = (v as { toDate: () => Date }).toDate();
+  } else if (typeof v === 'string') {
+    d = /^\d{4}-\d{2}-\d{2}$/.test(v) ? parseISO(v) : new Date(v);
+  } else if (typeof v === 'number') d = new Date(v);
+  else if (typeof v === 'object' && typeof (v as { seconds?: unknown }).seconds === 'number') {
+    d = new Date((v as { seconds: number }).seconds * 1000);
+  }
+  return d && !isNaN(d.getTime()) ? d : null;
+}
+
 export function formatTanggal(
   date: Date | Timestamp | string | null | undefined,
   fmt = 'd MMMM yyyy'
 ): string {
-  if (!date) return '-';
-  const d =
-    date instanceof Timestamp
-      ? date.toDate()
-      : typeof date === 'string'
-      ? new Date(date)
-      : date;
-  return format(d, fmt, { locale: id });
+  const d = toDateSafe(date);
+  return d ? format(d, fmt, { locale: id }) : '-';
 }
 
 export function formatTanggalPendek(date: Date | Timestamp | string | null | undefined): string {
@@ -39,15 +53,13 @@ export function formatTanggalPendek(date: Date | Timestamp | string | null | und
 }
 
 export function formatWaktu(date: Date | Timestamp | null | undefined): string {
-  if (!date) return '-';
-  const d = date instanceof Timestamp ? date.toDate() : date;
-  return format(d, 'HH:mm', { locale: id });
+  const d = toDateSafe(date);
+  return d ? format(d, 'HH:mm', { locale: id }) : '-';
 }
 
 export function formatRelative(date: Date | Timestamp | null | undefined): string {
-  if (!date) return '-';
-  const d = date instanceof Timestamp ? date.toDate() : date;
-  return formatDistanceToNow(d, { addSuffix: true, locale: id });
+  const d = toDateSafe(date);
+  return d ? formatDistanceToNow(d, { addSuffix: true, locale: id }) : '-';
 }
 
 export function timestampToDate(ts: Timestamp | undefined | null): Date | null {

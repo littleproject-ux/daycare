@@ -169,10 +169,10 @@ export default function KesehatanPage() {
 
         {/* Filter + action */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex gap-1 bg-stone-100 rounded-xl p-1">
+          <div className="flex gap-1 bg-stone-100 rounded-xl p-1 max-w-full overflow-x-auto">
             <button
               onClick={() => setFilterType('semua')}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${filterType === 'semua' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500'}`}
+              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors shrink-0 whitespace-nowrap ${filterType === 'semua' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500'}`}
             >
               Semua
             </button>
@@ -180,7 +180,7 @@ export default function KesehatanPage() {
               <button
                 key={t}
                 onClick={() => setFilterType(t)}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${filterType === t ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500'}`}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${filterType === t ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500'}`}
               >
                 {TYPE_CONFIG[t].label}
               </button>

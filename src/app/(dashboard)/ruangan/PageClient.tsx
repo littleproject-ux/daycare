@@ -82,8 +82,14 @@ export default function RuanganPage() {
         collection(db, 'organizations', organizationId, 'rooms'),
         orderBy('name')
       );
-      const snap = await getDocs(q);
-      setRooms(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as RoomWithMeta));
+      // Occupancy = active children assigned to the room (the stored field was never updated)
+      const [snap, childSnap] = await Promise.all([
+        getDocs(q),
+        getDocs(query(collection(db, 'organizations', organizationId, 'children'), where('status', '==', 'active'))),
+      ]);
+      const occ = new Map<string, number>();
+      childSnap.docs.forEach((d) => { const r = d.data().roomId as string | undefined; if (r) occ.set(r, (occ.get(r) ?? 0) + 1); });
+      setRooms(snap.docs.map((d) => ({ id: d.id, ...d.data(), currentOccupancy: occ.get(d.id) ?? 0 }) as RoomWithMeta));
     } catch (e) {
       console.error(e);
       toast({ title: 'Gagal memuat data ruangan', variant: 'error' });

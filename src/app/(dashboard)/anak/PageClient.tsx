@@ -44,8 +44,9 @@ import {
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import type { Child, ChildStatus } from '@/types';
-import { formatTanggal, formatTanggalPendek, hitungUmur, inisial } from '@/lib/utils';
+import type { Child, ChildStatus, Room } from '@/types';
+import { formatTanggalPendek, hitungUmur, inisial, toDateSafe } from '@/lib/utils';
+import { format, parseISO } from 'date-fns';
 import { toast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
@@ -61,6 +62,7 @@ const childSchema = z.object({
   emergencyContactName: z.string().min(2, 'Nama kontak darurat wajib diisi'),
   emergencyContactPhone: z.string().min(8, 'Nomor telepon tidak valid'),
   emergencyContactRelation: z.string().min(2, 'Hubungan wajib diisi'),
+  roomId: z.string().optional(),
 });
 
 type ChildFormData = z.infer<typeof childSchema>;
@@ -80,8 +82,10 @@ const STATUS_VARIANTS: Record<ChildStatus, 'success' | 'warning' | 'secondary' |
 };
 
 export default function AnakPage() {
-  const { organizationId, can } = useAuth();
+  const { organizationId, can, role, user } = useAuth();
+  const isParent = role === 'parent';
   const [children, setChildren] = useState<Child[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<ChildStatus | 'semua'>('semua');
@@ -98,20 +102,27 @@ export default function AnakPage() {
   } = useForm<ChildFormData>({ resolver: zodResolver(childSchema) });
 
   useEffect(() => {
-    if (!organizationId) return;
+    if (!organizationId || !user) return;
     loadChildren();
-  }, [organizationId]);
+    if (!isParent) {
+      getDocs(query(collection(db, 'organizations', organizationId, 'rooms'), orderBy('name')))
+        .then((snap) => setRooms(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Room).filter((r) => r.isActive !== false)))
+        .catch(console.error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, user, isParent]);
 
   async function loadChildren() {
     if (!organizationId) return;
     setIsLoading(true);
     try {
-      const q = query(
-        collection(db, 'organizations', organizationId, 'children'),
-        orderBy('fullName')
-      );
+      // Parents may only read their own children (security rules require the parentUserId filter)
+      const q = isParent && user
+        ? query(collection(db, 'organizations', organizationId, 'children'), where('parentUserId', '==', user.uid))
+        : query(collection(db, 'organizations', organizationId, 'children'), orderBy('fullName'));
       const snap = await getDocs(q);
-      setChildren(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Child));
+      setChildren(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Child)
+        .sort((a, b) => a.fullName.localeCompare(b.fullName)));
     } catch (e) {
       console.error(e);
       toast({ title: 'Gagal memuat data anak', variant: 'error' });
@@ -128,11 +139,8 @@ export default function AnakPage() {
     reset({
       fullName: child.fullName,
       preferredName: child.preferredName ?? '',
-      dateOfBirth: child.dateOfBirth
-        ? (child.dateOfBirth instanceof Object
-            ? (child.dateOfBirth as any).toDate?.().toISOString().slice(0, 10)
-            : String(child.dateOfBirth).slice(0, 10))
-        : '',
+      // format in LOCAL time; toISOString() is UTC and can shift the date by one day
+      dateOfBirth: toDateSafe(child.dateOfBirth) ? format(toDateSafe(child.dateOfBirth)!, 'yyyy-MM-dd') : '',
       gender: child.gender as 'L' | 'P',
       address: child.address ?? '',
       bloodType: (child.bloodType ?? '') as any,
@@ -141,6 +149,7 @@ export default function AnakPage() {
       emergencyContactName: child.emergencyContactName ?? '',
       emergencyContactPhone: child.emergencyContactPhone ?? '',
       emergencyContactRelation: child.emergencyContactRelation ?? '',
+      roomId: child.roomId ?? '',
     });
     setShowAddDialog(true);
   }
@@ -154,7 +163,7 @@ export default function AnakPage() {
   const onSubmit = async (data: ChildFormData) => {
     if (!organizationId) return;
     try {
-      const dob = Timestamp.fromDate(new Date(data.dateOfBirth));
+      const dob = Timestamp.fromDate(parseISO(data.dateOfBirth)); // local midnight
       const payload = {
         fullName: data.fullName,
         preferredName: data.preferredName || null,
@@ -167,6 +176,7 @@ export default function AnakPage() {
         emergencyContactName: data.emergencyContactName,
         emergencyContactPhone: data.emergencyContactPhone,
         emergencyContactRelation: data.emergencyContactRelation,
+        roomId: data.roomId || '',
         updatedAt: serverTimestamp(),
       };
 
@@ -178,8 +188,8 @@ export default function AnakPage() {
           ...payload,
           organizationId,
           branchId: '',
-          roomId: '',
           status: 'active' as ChildStatus,
+          parentUserId: null,
           authorizedPickupContacts: [],
           photoUrl: null,
           createdAt: serverTimestamp(),
@@ -220,11 +230,11 @@ export default function AnakPage() {
 
   return (
     <div>
-      <Topbar title="Data Anak" subtitle="Kelola profil dan informasi anak" />
+      <Topbar title={isParent ? 'Anak Saya' : 'Data Anak'} subtitle={isParent ? 'Profil anak Anda' : 'Kelola profil dan informasi anak'} />
 
-      <div className="p-6 space-y-5">
+      <div className="p-4 sm:p-6 space-y-5">
         {/* Summary cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {!isParent && <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {([
             { status: 'active', gradient: 'from-emerald-500 to-teal-600', emoji: '✅' },
             { status: 'waitlist', gradient: 'from-amber-500 to-orange-500', emoji: '⏳' },
@@ -244,10 +254,10 @@ export default function AnakPage() {
               <span className="absolute bottom-2 right-3 text-xl opacity-60">{emoji}</span>
             </button>
           ))}
-        </div>
+        </div>}
 
         {/* Toolbar */}
-        <div className="flex flex-col sm:flex-row gap-3">
+        {!isParent && <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400" />
             <input
@@ -276,7 +286,7 @@ export default function AnakPage() {
               Tambah Anak
             </Button>
           )}
-        </div>
+        </div>}
 
         {/* Children list */}
         {isLoading ? (
@@ -294,7 +304,7 @@ export default function AnakPage() {
               {search ? 'Tidak ada anak yang cocok' : 'Belum ada data anak'}
             </h3>
             <p className="text-sm text-stone-400 mt-1 mb-4">
-              {search ? 'Coba kata kunci lain.' : 'Mulai tambahkan data anak.'}
+              {search ? 'Coba kata kunci lain.' : isParent ? 'Hubungi admin daycare untuk menghubungkan akun Anda.' : 'Mulai tambahkan data anak.'}
             </p>
             {!search && can('create') && (
               <Button onClick={() => setShowAddDialog(true)} size="sm" className="gap-2">
@@ -324,7 +334,7 @@ export default function AnakPage() {
                           <div className="min-w-0">
                             <p className="font-semibold text-stone-900 truncate">{child.fullName}</p>
                             {child.preferredName && (
-                              <p className="text-xs text-stone-400">"{child.preferredName}"</p>
+                              <p className="text-xs text-stone-400">&ldquo;{child.preferredName}&rdquo;</p>
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
@@ -361,6 +371,12 @@ export default function AnakPage() {
                         <Phone className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate">{child.emergencyContactName} ({child.emergencyContactRelation})</span>
                       </div>
+                      {child.roomId && rooms.length > 0 && (
+                        <div className="flex items-center gap-2 text-xs text-stone-500">
+                          <MapPin className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{rooms.find((r) => r.id === child.roomId)?.name ?? '-'}</span>
+                        </div>
+                      )}
                       {child.allergies && child.allergies.length > 0 && (
                         <div className="flex items-center gap-2 text-xs text-amber-600">
                           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
@@ -444,6 +460,19 @@ export default function AnakPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-stone-700">Ruangan / Kelas</label>
+              <Select value={watch('roomId') || 'none'} onValueChange={(v) => setValue('roomId', v === 'none' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder={rooms.length ? 'Pilih ruangan...' : 'Belum ada ruangan'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Belum ditentukan</SelectItem>
+                  {rooms.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             <Input

@@ -38,7 +38,7 @@ const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string 
 };
 
 export default function JadwalPage() {
-  const { organizationId, can } = useAuth();
+  const { organizationId, can, role } = useAuth();
   const [events, setEvents] = useState<DaycareEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
@@ -75,7 +75,9 @@ export default function JadwalPage() {
         where('startDate', '<=', end),
         orderBy('startDate')
       ));
-      setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }) as DaycareEvent));
+      // parents must not see staff-only events
+      setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() }) as DaycareEvent)
+        .filter(e => role !== 'parent' || e.audience !== 'staff'));
     } catch {
       toast({ title: 'Gagal memuat jadwal', variant: 'error' });
     } finally {

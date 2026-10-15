@@ -122,6 +122,8 @@ export interface Child {
   emergencyContactRelation: string;
   authorizedPickupContacts: PickupContact[];
   programId?: string;
+  /** Firebase uid of the linked parent account (enables the parent portal). */
+  parentUserId?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -239,6 +241,8 @@ export interface Attendance {
   correctionOf?: string; // original attendance id
   correctionReason?: string;
   correctedBy?: string;
+  /** Copied from the child so parents can query their own records (security rules). */
+  parentUserId?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -289,6 +293,8 @@ export interface DailyReport {
   parentAcknowledgedBy?: string;
 
   photoUrls: string[];
+  /** Copied from the child so parents can query their own records (security rules). */
+  parentUserId?: string | null;
   publishedAt?: Timestamp;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -380,6 +386,9 @@ export interface Invoice {
   notes?: string;
   issuedAt?: Timestamp;
   periodLocked: boolean;
+  /** Denormalised for the parent portal. */
+  childName?: string;
+  parentUserId?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

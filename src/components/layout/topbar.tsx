@@ -38,7 +38,7 @@ export function Topbar({ title, subtitle, unreadCount = 0 }: TopbarProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-white/95 backdrop-blur-md px-6 border-b border-slate-200/60"
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-white/95 backdrop-blur-md pl-16 pr-4 lg:px-6 border-b border-slate-200/60"
       style={{ boxShadow: '0 1px 0 rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.04)' }}>
 
       <div className="flex flex-col min-w-0">

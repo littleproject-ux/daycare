@@ -128,7 +128,10 @@ service cloud.firestore {
 
       // Attendance
       match /attendance/{docId} {
-        allow read: if isSignedIn() && orgId() == orgDocId && (isStaff() || isAuditor());
+        allow read: if isSignedIn() && orgId() == orgDocId && (
+          isStaff() || isAuditor() ||
+          (isParent() && resource.data.parentUserId == request.auth.uid)
+        );
         allow create: if isSignedIn() && orgId() == orgDocId && isCaregiver();
         allow update: if isSignedIn() && orgId() == orgDocId && isCaregiver();
         allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();
@@ -147,7 +150,10 @@ service cloud.firestore {
 
       // Payments
       match /payments/{docId} {
-        allow read: if isSignedIn() && orgId() == orgDocId && (isFinance() || isAuditor());
+        allow read: if isSignedIn() && orgId() == orgDocId && (
+          isFinance() || isAuditor() ||
+          (isParent() && resource.data.parentUserId == request.auth.uid)
+        );
         allow create: if isSignedIn() && orgId() == orgDocId && isFinance();
         allow update: if isSignedIn() && orgId() == orgDocId && isAdmin();
         allow delete: if isSignedIn() && orgId() == orgDocId && isAdmin();

@@ -187,12 +187,12 @@ export default function TugasPage() {
 
         {/* Tabs + Action */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex gap-1 bg-stone-100 rounded-xl p-1">
+          <div className="flex gap-1 bg-stone-100 rounded-xl p-1 max-w-full overflow-x-auto">
             {(['semua', 'todo', 'in_progress', 'done'] as const).map(s => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${filterStatus === s ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500'}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${filterStatus === s ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500'}`}
               >
                 {s === 'semua' ? 'Semua' : STATUS_CONFIG[s].label}
                 {counts[s] > 0 && (

@@ -34,7 +34,7 @@ export default function LaporanPage() {
   const [stats, setStats] = useState<MonthStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
-  const [attendanceData, setAttendanceData] = useState<{ date: string; hadir: number; absent: number }[]>([]);
+  const [attendanceData, setAttendanceData] = useState<{ date: string; label: string; hadir: number; absent: number }[]>([]);
 
   useEffect(() => {
     if (!organizationId) return;
@@ -50,7 +50,7 @@ export default function LaporanPage() {
       const tsStart = Timestamp.fromDate(monthStart);
       const tsEnd = Timestamp.fromDate(monthEnd);
 
-      const [childSnap, attendSnap, invoiceSnap, incidentSnap] = await Promise.all([
+      const [childSnap, attendSnap, invoiceSnap, incidentSnap, paymentSnap] = await Promise.all([
         getDocs(query(collection(db, 'organizations', organizationId, 'children'))),
         getDocs(query(
           collection(db, 'organizations', organizationId, 'attendance'),
@@ -66,6 +66,12 @@ export default function LaporanPage() {
           collection(db, 'organizations', organizationId, 'healthIncidents'),
           where('occurredAt', '>=', tsStart),
           where('occurredAt', '<=', tsEnd)
+        )),
+        // Revenue = cash actually received this month (payments), not invoice fields
+        getDocs(query(
+          collection(db, 'organizations', organizationId, 'payments'),
+          where('paidAt', '>=', tsStart),
+          where('paidAt', '<=', tsEnd)
         )),
       ]);
 
@@ -87,23 +93,24 @@ export default function LaporanPage() {
         const date = att.date as string;
         if (!byDate.has(date)) byDate.set(date, { hadir: 0, absent: 0 });
         const day = byDate.get(date)!;
-        if (att.status === 'hadir' || att.status === 'terlambat') day.hadir++;
-        else day.absent++;
+        if (att.status === 'hadir') day.hadir++;
+        else if (att.status !== 'libur') day.absent++;
       }
-      const attData = days.slice(0, 15).map(d => {
+      const attData = days.map(d => {
         const key = format(d, 'yyyy-MM-dd');
         const v = byDate.get(key) ?? { hadir: 0, absent: 0 };
-        return { date: format(d, 'd MMM', { locale: localeId }), ...v };
+        return { date: key, label: format(d, 'd'), ...v };
       });
       setAttendanceData(attData);
 
-      const totalHadir = attendances.filter(a => a.status === 'hadir' || a.status === 'terlambat').length;
-      const totalAttendance = attendances.length;
+      const counted = attendances.filter(a => a.status !== 'libur');
+      const totalHadir = counted.filter(a => a.status === 'hadir').length;
+      const totalAttendance = counted.length;
       const avgAttendance = totalAttendance > 0 ? Math.round((totalHadir / totalAttendance) * 100) : 0;
 
       const paidInvoices = invoices.filter(i => i.status === 'paid');
       const pendingInvoices = invoices.filter(i => i.status !== 'paid' && i.status !== 'cancelled');
-      const totalRevenue = paidInvoices.reduce((s, i) => s + (i.amount - (i.outstandingAmount ?? 0)), 0);
+      const totalRevenue = paymentSnap.docs.reduce((s, d) => s + (Number(d.data().amount) || 0), 0);
 
       setStats({
         totalChildren: children.length,
@@ -122,7 +129,37 @@ export default function LaporanPage() {
     }
   }
 
-  const maxBar = Math.max(...attendanceData.map(d => d.hadir + d.absent), 1);
+  const maxBar = Math.max(...attendanceData.map(d => Math.max(d.hadir, d.absent)), 1);
+
+  function exportCsv() {
+    if (!stats) return;
+    const month = format(selectedMonth, 'MMMM yyyy', { locale: localeId });
+    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const rows: (string | number)[][] = [
+      ['Laporan Bulanan', month],
+      [],
+      ['Indikator', 'Nilai'],
+      ['Anak aktif', stats.activeChildren],
+      ['Total anak terdaftar', stats.totalChildren],
+      ['Pendaftar baru', stats.newEnrollments],
+      ['Kehadiran rata-rata (%)', stats.avgAttendance],
+      ['Insiden kesehatan', stats.totalIncidents],
+      ['Pendapatan diterima (Rp)', stats.totalRevenue],
+      ['Invoice lunas', stats.paidInvoices],
+      ['Invoice belum lunas', stats.pendingInvoices],
+      [],
+      ['Tanggal', 'Hadir', 'Tidak hadir/izin/sakit'],
+      ...attendanceData.map(d => [d.date, d.hadir, d.absent]),
+    ];
+    // BOM so Excel opens UTF-8 correctly; semicolon is the default list separator for id-ID Excel
+    const csv = '\uFEFF' + rows.map(r => r.map(esc).join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `laporan-${format(selectedMonth, 'yyyy-MM')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div>
@@ -145,7 +182,7 @@ export default function LaporanPage() {
             >›</button>
           </div>
           {can('export') && (
-            <Button variant="outline" className="gap-2">
+            <Button variant="outline" className="gap-2" onClick={exportCsv} disabled={!stats || isLoading}>
               <Download className="h-4 w-4" /> Ekspor Laporan
             </Button>
           )}
@@ -164,7 +201,7 @@ export default function LaporanPage() {
                 { label: 'Pendaftar Baru', value: stats.newEnrollments, sub: 'bulan ini', icon: <TrendingUp className="h-5 w-5" />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                 { label: 'Kehadiran Rata-rata', value: `${stats.avgAttendance}%`, sub: 'anak hadir', icon: <CheckCircle2 className="h-5 w-5" />, color: 'text-blue-600', bg: 'bg-blue-50' },
                 { label: 'Insiden Kesehatan', value: stats.totalIncidents, sub: 'bulan ini', icon: <XCircle className="h-5 w-5" />, color: 'text-amber-600', bg: 'bg-amber-50' },
-                { label: 'Total Pendapatan', value: formatRupiah(stats.totalRevenue), sub: 'sudah dibayar', icon: <DollarSign className="h-5 w-5" />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                { label: 'Pendapatan Diterima', value: formatRupiah(stats.totalRevenue), sub: 'pembayaran bulan ini', icon: <DollarSign className="h-5 w-5" />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                 { label: 'Invoice Lunas', value: stats.paidInvoices, sub: 'tagihan', icon: <FileText className="h-5 w-5" />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                 { label: 'Invoice Pending', value: stats.pendingInvoices, sub: 'belum dibayar', icon: <FileText className="h-5 w-5" />, color: 'text-amber-600', bg: 'bg-amber-50' },
                 { label: 'Total Anak', value: stats.totalChildren, sub: 'terdaftar', icon: <Users className="h-5 w-5" />, color: 'text-stone-600', bg: 'bg-stone-50' },
@@ -185,14 +222,14 @@ export default function LaporanPage() {
               <CardHeader>
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-coral-500" />
-                  Kehadiran Harian (15 hari pertama)
+                  Kehadiran Harian
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {attendanceData.length === 0 ? (
                   <p className="text-center text-sm text-stone-400 py-8">Belum ada data kehadiran</p>
                 ) : (
-                  <div className="flex items-end gap-1.5 h-32 overflow-x-auto">
+                  <div className="flex items-end gap-1.5 overflow-x-auto pb-1">
                     {attendanceData.map(d => (
                       <div key={d.date} className="flex flex-col items-center gap-1 shrink-0">
                         <div className="flex items-end gap-0.5" style={{ height: '96px' }}>
@@ -207,7 +244,7 @@ export default function LaporanPage() {
                             title={`Tidak hadir: ${d.absent}`}
                           />
                         </div>
-                        <span className="text-[9px] text-stone-400 whitespace-nowrap">{d.date}</span>
+                        <span className="text-[9px] text-stone-400 whitespace-nowrap">{d.label}</span>
                       </div>
                     ))}
                   </div>

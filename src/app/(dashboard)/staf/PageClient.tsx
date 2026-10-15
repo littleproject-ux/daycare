@@ -207,12 +207,12 @@ export default function StafPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex gap-1 bg-stone-100 rounded-xl p-1">
+          <div className="flex gap-1 bg-stone-100 rounded-xl p-1 max-w-full overflow-x-auto">
             {(['semua', 'aktif', 'cuti', 'nonaktif'] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors shrink-0 whitespace-nowrap ${
                   filterStatus === s ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'
                 }`}
               >

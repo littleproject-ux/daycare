@@ -161,14 +161,14 @@ export default function PendaftaranPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-stone-100 rounded-xl p-1 w-fit">
+        <div className="flex gap-1 bg-stone-100 rounded-xl p-1 w-fit max-w-full overflow-x-auto">
           {STATUS_FILTER_TABS.map((tab) => {
             const count = children.filter((c) => c.status === tab.value).length;
             return (
               <button
                 key={tab.value}
                 onClick={() => setActiveTab(tab.value)}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors shrink-0 whitespace-nowrap ${
                   activeTab === tab.value ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'
                 }`}
               >

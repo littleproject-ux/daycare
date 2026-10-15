@@ -34,7 +34,7 @@ service firebase.storage {
       allow read: if isSignedIn() && orgId() == orgIdPath;
       allow write: if isSignedIn() && orgId() == orgIdPath && isStaff()
         && request.resource.size < 10 * 1024 * 1024  // 10 MB max
-        && request.resource.contentType.matches('image/.*|application/pdf|application/vnd.openxmlformats.*');
+        && request.resource.contentType.matches('image/.*|application/pdf|application/vnd.openxmlformats.*|application/msword|application/vnd.ms-excel');
       allow delete: if isSignedIn() && orgId() == orgIdPath && isAdmin();
     }
   }

@@ -38,7 +38,7 @@ const AUDIENCE_CONFIG: Record<AnnouncementAudience, { label: string; variant: 'i
 };
 
 export default function KomunikasiPage() {
-  const { organizationId, user, can } = useAuth();
+  const { organizationId, user, can, role } = useAuth();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
@@ -65,7 +65,9 @@ export default function KomunikasiPage() {
         collection(db, 'organizations', organizationId, 'announcements'),
         orderBy('createdAt', 'desc')
       ));
-      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Announcement));
+      // parents must not see staff-only announcements
+      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Announcement)
+        .filter(a => role !== 'parent' || a.audience !== 'staff'));
     } catch {
       toast({ title: 'Gagal memuat pengumuman', variant: 'error' });
     } finally {
@@ -112,7 +114,7 @@ export default function KomunikasiPage() {
       <div className="p-6 space-y-5">
         {/* Tabs */}
         <div className="flex items-center gap-3">
-          <div className="flex gap-1 bg-stone-100 rounded-xl p-1">
+          <div className="flex gap-1 bg-stone-100 rounded-xl p-1 max-w-full overflow-x-auto">
             <button
               onClick={() => setActiveTab('pengumuman')}
               className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'pengumuman' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500'}`}

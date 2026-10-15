@@ -159,13 +159,13 @@ export default function LaporanHarianPage() {
   }
 
   async function saveReport() {
-    if (!organizationId) return;
     if (!selectedChild || !organizationId || !user) return;
     setIsSaving(true);
     try {
       const payload = {
         organizationId,
         childId: selectedChild.id,
+        parentUserId: selectedChild.parentUserId ?? null,
         branchId: selectedChild.branchId || '',
         roomId: selectedChild.roomId || '',
         date: dateStr,
@@ -232,7 +232,7 @@ export default function LaporanHarianPage() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1 text-center">
-            <p className="text-sm font-semibold text-stone-900">
+            <p className="text-sm font-semibold text-stone-900" suppressHydrationWarning>
               {format(selectedDate, 'EEEE, d MMMM yyyy', { locale: localeId })}
             </p>
             {dateStr === dateToYMD(new Date()) && (
@@ -243,7 +243,9 @@ export default function LaporanHarianPage() {
             variant="outline"
             size="icon-sm"
             onClick={() => setSelectedDate(addDays(selectedDate, 1))}
-            disabled={selectedDate >= new Date()}
+            // compare calendar days, not milliseconds: no recording for future dates
+            disabled={dateStr >= dateToYMD(new Date())}
+            suppressHydrationWarning
           >
             <ChevronRight className="h-4 w-4" />
           </Button>

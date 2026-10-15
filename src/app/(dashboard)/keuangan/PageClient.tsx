@@ -20,7 +20,8 @@ import {
   XCircle, TrendingUp, Search, Eye, CreditCard,
 } from 'lucide-react';
 import type { Invoice, InvoiceStatus, Child } from '@/types';
-import { formatRupiah, inisial } from '@/lib/utils';
+import { formatRupiah, inisial, toDateSafe } from '@/lib/utils';
+import { effectiveInvoiceStatus } from '@/lib/parent-data';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
@@ -77,14 +78,13 @@ export default function KeuanganPage() {
       // Load children for the form select
       const childQ = query(
         collection(db, 'organizations', organizationId, 'children'),
-        where('status', '==', 'active'),
         orderBy('fullName')
       );
       const childSnap = await getDocs(childQ);
-      const childList = childSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Child);
-      setChildren(childList);
+      const allChildren = childSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Child);
+      setChildren(allChildren.filter((c) => c.status === 'active'));
       const cmap = new Map<string, Child>();
-      childList.forEach((c) => cmap.set(c.id, c));
+      allChildren.forEach((c) => cmap.set(c.id, c));
       setChildMap(cmap);
 
       // Load invoices
@@ -104,7 +104,6 @@ export default function KeuanganPage() {
   }
 
   async function createInvoice() {
-    if (!organizationId) return;
     if (!organizationId || !user) return;
     if (!formData.childId) { toast({ title: 'Pilih anak terlebih dahulu', variant: 'error' }); return; }
     if (!formData.amount || isNaN(Number(formData.amount))) { toast({ title: 'Masukkan jumlah yang valid', variant: 'error' }); return; }
@@ -112,7 +111,10 @@ export default function KeuanganPage() {
     setIsSaving(true);
     try {
       const amount = parseFloat(formData.amount);
-      const dueDate = formData.dueDate ? Timestamp.fromDate(new Date(formData.dueDate)) : Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      // parse 'yyyy-MM-dd' as a LOCAL date (new Date('2026-10-20') is UTC midnight)
+      const dueLocal = toDateSafe(formData.dueDate);
+      const dueDate = Timestamp.fromDate(dueLocal ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const child = childMap.get(formData.childId);
       const now = new Date();
       const invoiceNum = `INV/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(Date.now()).slice(-4)}`;
 
@@ -120,6 +122,8 @@ export default function KeuanganPage() {
         organizationId,
         invoiceNumber: invoiceNum,
         childId: formData.childId,
+        childName: child?.fullName ?? '',
+        parentUserId: child?.parentUserId ?? null,
         guardianId: '',
         branchId: '',
         status: 'sent',
@@ -166,11 +170,15 @@ export default function KeuanganPage() {
       toast({ title: 'Masukkan jumlah pembayaran yang valid', variant: 'error' });
       return;
     }
+    if (amount > selectedInvoice.outstandingAmount) {
+      toast({ title: `Jumlah melebihi sisa tagihan (${formatRupiah(selectedInvoice.outstandingAmount)})`, variant: 'error' });
+      return;
+    }
     setIsSaving(true);
     try {
-      const newPaid = selectedInvoice.paidAmount + amount;
+      const newPaid = (selectedInvoice.paidAmount ?? 0) + amount;
       const newOutstanding = Math.max(0, selectedInvoice.totalAmount - newPaid);
-      const newStatus: InvoiceStatus = newOutstanding <= 0 ? 'paid' : selectedInvoice.status;
+      const newStatus: InvoiceStatus = newOutstanding <= 0 ? 'paid' : 'partial';
 
       await updateDoc(doc(db, 'organizations', organizationId, 'invoices', selectedInvoice.id), {
         paidAmount: newPaid,
@@ -184,6 +192,7 @@ export default function KeuanganPage() {
         organizationId,
         invoiceId: selectedInvoice.id,
         childId: selectedInvoice.childId,
+        parentUserId: selectedInvoice.parentUserId ?? childMap.get(selectedInvoice.childId)?.parentUserId ?? null,
         amount,
         method: 'transfer',
         status: 'sukses',
@@ -204,19 +213,22 @@ export default function KeuanganPage() {
     }
   }
 
+  // sent/partial invoices past due are treated as overdue (nothing flips the DB status automatically)
+  const statusOf = (inv: Invoice) => effectiveInvoiceStatus(inv.status, toDateSafe(inv.dueDate), inv.outstandingAmount ?? 0);
+
   const filtered = invoices.filter((inv) => {
     const child = childMap.get(inv.childId);
-    const matchStatus = filterStatus === 'semua' || inv.status === filterStatus;
+    const matchStatus = filterStatus === 'semua' || statusOf(inv) === filterStatus;
     const matchSearch = !search || child?.fullName.toLowerCase().includes(search.toLowerCase()) ||
       inv.invoiceNumber.toLowerCase().includes(search.toLowerCase());
     return matchStatus && matchSearch;
   });
 
   const summary = {
-    totalPiutang: invoices.filter((i) => i.status !== 'paid' && i.status !== 'cancelled')
-      .reduce((sum, i) => sum + i.outstandingAmount, 0),
-    terlambat: invoices.filter((i) => i.status === 'overdue').length,
-    lunas: invoices.filter((i) => i.status === 'paid').length,
+    totalPiutang: invoices.filter((i) => !['paid', 'cancelled', 'draft'].includes(statusOf(i)))
+      .reduce((sum, i) => sum + (i.outstandingAmount ?? 0), 0),
+    terlambat: invoices.filter((i) => statusOf(i) === 'overdue').length,
+    lunas: invoices.filter((i) => statusOf(i) === 'paid').length,
     totalTagihan: invoices.filter((i) => i.status !== 'cancelled').length,
   };
 
@@ -224,7 +236,7 @@ export default function KeuanganPage() {
     <div>
       <Topbar title="Keuangan" subtitle="Kelola tagihan dan pembayaran" />
 
-      <div className="p-6 space-y-5">
+      <div className="p-4 sm:p-6 space-y-5">
         {/* Summary cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="rounded-xl p-4 bg-coral-50">
@@ -257,7 +269,7 @@ export default function KeuanganPage() {
             />
           </div>
           <div className="flex gap-1 bg-stone-100 rounded-xl p-1 overflow-x-auto">
-            {(['semua', 'sent', 'overdue', 'paid'] as const).map((s) => (
+            {(['semua', 'sent', 'partial', 'overdue', 'paid'] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
@@ -291,7 +303,8 @@ export default function KeuanganPage() {
             <div className="divide-y divide-stone-50">
               {filtered.map((inv) => {
                 const child = childMap.get(inv.childId);
-                const cfg = STATUS_CONFIG[inv.status];
+                const cfg = STATUS_CONFIG[statusOf(inv)] ?? STATUS_CONFIG.sent;
+                const due = toDateSafe(inv.dueDate);
                 return (
                   <div key={inv.id} className="flex items-center gap-3 p-4 hover:bg-stone-50/60 transition-colors">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-coral-50 text-coral-500 font-bold text-sm">
@@ -301,7 +314,7 @@ export default function KeuanganPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-stone-900 truncate">
-                          {child?.fullName || 'Anak tidak dikenal'}
+                          {child?.fullName || inv.childName || 'Anak tidak dikenal'}
                         </p>
                         <Badge variant={cfg.variant} className="gap-1 text-xs shrink-0">
                           {cfg.icon} {cfg.label}
@@ -309,8 +322,8 @@ export default function KeuanganPage() {
                       </div>
                       <div className="flex items-center gap-3 text-xs text-stone-400 mt-0.5">
                         <span>{inv.invoiceNumber}</span>
-                        {inv.dueDate && (
-                          <span>Jatuh tempo: {format(inv.dueDate.toDate(), 'd MMM yyyy', { locale: localeId })}</span>
+                        {due && (
+                          <span>Jatuh tempo: {format(due, 'd MMM yyyy', { locale: localeId })}</span>
                         )}
                       </div>
                     </div>
