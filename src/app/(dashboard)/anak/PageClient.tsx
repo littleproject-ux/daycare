@@ -102,6 +102,7 @@ export default function AnakPage() {
   }, [organizationId]);
 
   async function loadChildren() {
+    if (!organizationId) return;
     setIsLoading(true);
     try {
       const q = query(

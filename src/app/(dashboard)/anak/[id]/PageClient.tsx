@@ -57,19 +57,20 @@ export default function ChildDetailPage() {
   }, [id, organizationId]);
 
   async function loadData() {
+    if (!organizationId || !id) return;
     setIsLoading(true);
     try {
       const [childSnap, reportSnap] = await Promise.all([
-        getDoc(doc(db, 'children', id)),
+        getDoc(doc(db, 'organizations', organizationId, 'children', id)),
         getDocs(query(
-          collection(db, 'dailyReports'),
+          collection(db, 'organizations', organizationId, 'dailyReports'),
           where('childId', '==', id),
           orderBy('date', 'desc'),
           limit(7)
         )),
       ]);
 
-      if (!childSnap.exists() || childSnap.data()?.organizationId !== organizationId) {
+      if (!childSnap.exists()) {
         toast({ title: 'Data anak tidak ditemukan', variant: 'error' });
         router.push('/anak');
         return;
