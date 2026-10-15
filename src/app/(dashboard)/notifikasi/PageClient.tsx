@@ -28,6 +28,8 @@ import {
   Wallet,
   HeartPulse,
   MessageCircle,
+  Search,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -64,6 +66,7 @@ export default function NotifikasiPage() {
   const [notifs, setNotifs] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('Semua');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!userProfile?.id || !organizationId || !db) {
@@ -103,8 +106,12 @@ export default function NotifikasiPage() {
   };
 
   const filtered = notifs.filter((n) => {
-    if (filter === 'Belum Dibaca') return !n.read;
-    if (filter === 'Dibaca') return n.read;
+    if (filter === 'Belum Dibaca' && n.read) return false;
+    if (filter === 'Dibaca' && !n.read) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q);
+    }
     return true;
   });
 
@@ -133,6 +140,26 @@ export default function NotifikasiPage() {
           >
             <CheckCheck className="h-3.5 w-3.5" />
             Tandai semua dibaca
+          </button>
+        )}
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          placeholder="Cari notifikasi..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-10 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 transition-all"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            <X className="h-4 w-4" />
           </button>
         )}
       </div>
