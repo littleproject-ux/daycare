@@ -78,8 +78,7 @@ export default function RuanganPage() {
     setIsLoading(true);
     try {
       const q = query(
-        collection(db, 'rooms'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'rooms'),
         orderBy('name')
       );
       const snap = await getDocs(q);
@@ -139,10 +138,10 @@ export default function RuanganPage() {
         updatedAt: serverTimestamp(),
       };
       if (editingRoom) {
-        await updateDoc(doc(db, 'rooms', editingRoom.id), payload);
+        await updateDoc(doc(db, 'organizations', organizationId, 'rooms', editingRoom.id), payload);
         toast({ title: 'Ruangan berhasil diperbarui' });
       } else {
-        await addDoc(collection(db, 'rooms'), { ...payload, createdAt: serverTimestamp() });
+        await addDoc(collection(db, 'organizations', organizationId, 'rooms'), { ...payload, createdAt: serverTimestamp() });
         toast({ title: 'Ruangan berhasil ditambahkan' });
       }
       setShowDialog(false);
@@ -157,7 +156,7 @@ export default function RuanganPage() {
 
   async function deleteRoom(room: RoomWithMeta) {
     try {
-      await deleteDoc(doc(db, 'rooms', room.id));
+      await deleteDoc(doc(db, 'organizations', organizationId, 'rooms', room.id));
       toast({ title: 'Ruangan dihapus' });
       setDeleteConfirm(null);
       loadRooms();

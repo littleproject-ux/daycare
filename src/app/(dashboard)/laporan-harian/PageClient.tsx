@@ -100,8 +100,7 @@ export default function LaporanHarianPage() {
     setIsLoading(true);
     try {
       const childQ = query(
-        collection(db, 'children'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'children'),
         where('status', '==', 'active'),
         orderBy('fullName')
       );
@@ -110,8 +109,7 @@ export default function LaporanHarianPage() {
       setChildren(childList);
 
       const reportQ = query(
-        collection(db, 'dailyReports'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'dailyReports'),
         where('date', '==', dateStr)
       );
       const reportSnap = await getDocs(reportQ);
@@ -160,6 +158,7 @@ export default function LaporanHarianPage() {
   }
 
   async function saveReport() {
+    if (!organizationId) return;
     if (!selectedChild || !organizationId || !user) return;
     setIsSaving(true);
     try {
@@ -199,9 +198,9 @@ export default function LaporanHarianPage() {
       };
 
       if (editingReport) {
-        await updateDoc(doc(db, 'dailyReports', editingReport.id), payload);
+        await updateDoc(doc(db, 'organizations', organizationId, 'dailyReports', editingReport.id), payload);
       } else {
-        await addDoc(collection(db, 'dailyReports'), {
+        await addDoc(collection(db, 'organizations', organizationId, 'dailyReports'), {
           ...payload,
           parentAcknowledgedAt: null,
           createdAt: serverTimestamp(),

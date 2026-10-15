@@ -75,8 +75,7 @@ export default function KeuanganPage() {
     try {
       // Load children for the form select
       const childQ = query(
-        collection(db, 'children'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'children'),
         where('status', '==', 'active'),
         orderBy('fullName')
       );
@@ -89,8 +88,7 @@ export default function KeuanganPage() {
 
       // Load invoices
       const invQ = query(
-        collection(db, 'invoices'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'invoices'),
         orderBy('createdAt', 'desc'),
         limit(100)
       );
@@ -116,7 +114,7 @@ export default function KeuanganPage() {
       const now = new Date();
       const invoiceNum = `INV/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(Date.now()).slice(-4)}`;
 
-      await addDoc(collection(db, 'invoices'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'invoices'), {
         organizationId,
         invoiceNumber: invoiceNum,
         childId: formData.childId,
@@ -171,7 +169,7 @@ export default function KeuanganPage() {
       const newOutstanding = Math.max(0, selectedInvoice.totalAmount - newPaid);
       const newStatus: InvoiceStatus = newOutstanding <= 0 ? 'paid' : selectedInvoice.status;
 
-      await updateDoc(doc(db, 'invoices', selectedInvoice.id), {
+      await updateDoc(doc(db, 'organizations', organizationId, 'invoices', selectedInvoice.id), {
         paidAmount: newPaid,
         outstandingAmount: newOutstanding,
         status: newStatus,
@@ -179,7 +177,7 @@ export default function KeuanganPage() {
       });
 
       // Also create a payment record
-      await addDoc(collection(db, 'payments'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'payments'), {
         organizationId,
         invoiceId: selectedInvoice.id,
         childId: selectedInvoice.childId,

@@ -69,8 +69,7 @@ export default function JadwalPage() {
       const start = Timestamp.fromDate(startOfMonth(currentMonth));
       const end = Timestamp.fromDate(endOfMonth(currentMonth));
       const snap = await getDocs(query(
-        collection(db, 'events'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'events'),
         where('startDate', '>=', start),
         where('startDate', '<=', end),
         orderBy('startDate')
@@ -90,7 +89,7 @@ export default function JadwalPage() {
     }
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'events'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'events'), {
         organizationId,
         title: form.title,
         description: form.description,

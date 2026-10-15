@@ -71,8 +71,7 @@ export default function InventarisPage() {
     setIsLoading(true);
     try {
       const snap = await getDocs(query(
-        collection(db, 'inventory'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'inventory'),
         orderBy('name')
       ));
       setItems(snap.docs.map(d => ({ id: d.id, ...d.data() }) as InventoryItem));
@@ -90,7 +89,7 @@ export default function InventarisPage() {
     }
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'inventory'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'inventory'), {
         organizationId,
         name: form.name,
         category: form.category,
@@ -128,12 +127,12 @@ export default function InventarisPage() {
         setIsSaving(false);
         return;
       }
-      await updateDoc(doc(db, 'inventory', selectedItem.id), {
+      await updateDoc(doc(db, 'organizations', organizationId, 'inventory', selectedItem.id), {
         stock: increment(delta),
         updatedAt: serverTimestamp(),
       });
       // Log stock movement
-      await addDoc(collection(db, 'stockMovements'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'stockMovements'), {
         organizationId,
         itemId: selectedItem.id,
         itemName: selectedItem.name,

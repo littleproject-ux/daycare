@@ -61,8 +61,7 @@ export default function KomunikasiPage() {
     setIsLoading(true);
     try {
       const snap = await getDocs(query(
-        collection(db, 'announcements'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'announcements'),
         orderBy('createdAt', 'desc')
       ));
       setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Announcement));
@@ -80,7 +79,7 @@ export default function KomunikasiPage() {
     }
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'announcements'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'announcements'), {
         organizationId,
         title: form.title,
         body: form.body,

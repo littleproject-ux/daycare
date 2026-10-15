@@ -88,8 +88,7 @@ export default function DokumenPage() {
     setIsLoading(true);
     try {
       const snap = await getDocs(query(
-        collection(db, 'documents'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'documents'),
         orderBy('createdAt', 'desc')
       ));
       setDocuments(snap.docs.map(d => ({ id: d.id, ...d.data() }) as DaycareDocument));
@@ -120,7 +119,7 @@ export default function DokumenPage() {
       });
 
       const fileUrl = await getDownloadURL(storageRef);
-      await addDoc(collection(db, 'documents'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'documents'), {
         organizationId,
         name: form.name,
         category: form.category,
@@ -150,7 +149,7 @@ export default function DokumenPage() {
   async function deleteDocument(doc_: DaycareDocument) {
     if (!confirm(`Hapus dokumen "${doc_.name}"?`)) return;
     try {
-      await deleteDoc(doc(db, 'documents', doc_.id));
+      await deleteDoc(doc(db, 'organizations', organizationId, 'documents', doc_.id));
       try { await deleteObject(ref(storage, doc_.filePath)); } catch {}
       toast({ title: 'Dokumen dihapus', variant: 'success' });
       loadDocuments();

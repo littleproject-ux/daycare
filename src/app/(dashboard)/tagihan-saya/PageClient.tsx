@@ -50,7 +50,7 @@ function InvoiceCard({ invoice }: { invoice: Invoice }) {
     setLoadingPay(true);
     try {
       const snap = await getDocs(query(
-        collection(db, 'payments'),
+        collection(db, 'organizations', organizationId, 'payments'),
         where('invoiceId', '==', invoice.id),
         orderBy('paidAt', 'desc'),
       ));
@@ -153,8 +153,7 @@ export default function TagihanSayaPage() {
     setIsLoading(true);
     try {
       const snap = await getDocs(query(
-        collection(db, 'invoices'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'invoices'),
         where('parentUserId', '==', user.uid),
         orderBy('dueDate', 'desc'),
       ));

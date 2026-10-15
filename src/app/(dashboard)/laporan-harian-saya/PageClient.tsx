@@ -130,8 +130,7 @@ export default function LaporanHarianSayaPage() {
     if (!organizationId || !user) return;
     try {
       const snap = await getDocs(query(
-        collection(db, 'children'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'children'),
         where('parentUserId', '==', user.uid),
         where('status', '==', 'aktif'),
         orderBy('fullName'),
@@ -149,7 +148,7 @@ export default function LaporanHarianSayaPage() {
 
       const snaps = await Promise.all(childIds.map(cid =>
         getDocs(query(
-          collection(db, 'dailyReports'),
+          collection(db, 'organizations', organizationId, 'dailyReports'),
           where('childId', '==', cid),
           where('date', '>=', thirtyDaysAgo),
           orderBy('date', 'desc'),

@@ -51,8 +51,7 @@ export default function KehadiranSayaPage() {
     if (!organizationId || !user) return;
     try {
       const snap = await getDocs(query(
-        collection(db, 'children'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'children'),
         where('parentUserId', '==', user.uid),
         where('status', '==', 'aktif'),
         orderBy('fullName'),
@@ -65,13 +64,14 @@ export default function KehadiranSayaPage() {
   }
 
   async function loadAttendance() {
+    if (!organizationId) return;
     if (!selectedChild || !organizationId) return;
     setIsLoading(true);
     try {
       const start = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
       const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
       const snap = await getDocs(query(
-        collection(db, 'attendance'),
+        collection(db, 'organizations', organizationId, 'attendance'),
         where('childId', '==', selectedChild),
         where('date', '>=', start),
         where('date', '<=', end),

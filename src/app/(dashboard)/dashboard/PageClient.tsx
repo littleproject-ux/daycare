@@ -104,8 +104,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!organizationId) return;
     getDocs(query(
-      collection(db, 'rooms'),
-      where('organizationId', '==', organizationId),
+      collection(db, 'organizations', organizationId, 'rooms'),
       where('isActive', '==', true),
       orderBy('name')
     )).then((snap) => {

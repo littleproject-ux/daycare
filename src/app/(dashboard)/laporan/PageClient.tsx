@@ -50,22 +50,19 @@ export default function LaporanPage() {
       const tsEnd = Timestamp.fromDate(monthEnd);
 
       const [childSnap, attendSnap, invoiceSnap, incidentSnap] = await Promise.all([
-        getDocs(query(collection(db, 'children'), where('organizationId', '==', organizationId))),
+        getDocs(query(collection(db, 'organizations', organizationId, 'children'))),
         getDocs(query(
-          collection(db, 'attendance'),
-          where('organizationId', '==', organizationId),
+          collection(db, 'organizations', organizationId, 'attendance'),
           where('date', '>=', format(monthStart, 'yyyy-MM-dd')),
           where('date', '<=', format(monthEnd, 'yyyy-MM-dd'))
         )),
         getDocs(query(
-          collection(db, 'invoices'),
-          where('organizationId', '==', organizationId),
+          collection(db, 'organizations', organizationId, 'invoices'),
           where('createdAt', '>=', tsStart),
           where('createdAt', '<=', tsEnd)
         )),
         getDocs(query(
-          collection(db, 'healthIncidents'),
-          where('organizationId', '==', organizationId),
+          collection(db, 'organizations', organizationId, 'healthIncidents'),
           where('occurredAt', '>=', tsStart),
           where('occurredAt', '<=', tsEnd)
         )),

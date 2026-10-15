@@ -66,8 +66,7 @@ export default function PendaftaranPage() {
     setIsLoading(true);
     try {
       const q = query(
-        collection(db, 'children'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'children'),
         orderBy('createdAt', 'desc')
       );
       const snap = await getDocs(q);
@@ -82,7 +81,7 @@ export default function PendaftaranPage() {
   async function updateStatus(childId: string, newStatus: ChildStatus) {
     setIsUpdating(childId);
     try {
-      await updateDoc(doc(db, 'children', childId), {
+      await updateDoc(doc(db, 'organizations', organizationId, 'children', childId), {
         status: newStatus,
         updatedAt: serverTimestamp(),
       });
@@ -98,7 +97,7 @@ export default function PendaftaranPage() {
   async function onSubmit(data: PendaftaranFormData) {
     if (!organizationId) return;
     try {
-      await addDoc(collection(db, 'children'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'children'), {
         organizationId,
         branchId: '',
         roomId: '',

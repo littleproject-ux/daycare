@@ -87,13 +87,11 @@ export default function KesehatanPage() {
     try {
       const [incidentSnap, childSnap] = await Promise.all([
         getDocs(query(
-          collection(db, 'healthIncidents'),
-          where('organizationId', '==', organizationId),
+          collection(db, 'organizations', organizationId, 'healthIncidents'),
           orderBy('occurredAt', 'desc')
         )),
         getDocs(query(
-          collection(db, 'children'),
-          where('organizationId', '==', organizationId),
+          collection(db, 'organizations', organizationId, 'children'),
           where('status', '==', 'active'),
           orderBy('fullName')
         )),
@@ -116,7 +114,7 @@ export default function KesehatanPage() {
     try {
       const child = children.find(c => c.id === form.childId);
       const occurredAt = Timestamp.fromDate(new Date(`${form.occurredDate}T${form.occurredTime}`));
-      await addDoc(collection(db, 'healthIncidents'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'healthIncidents'), {
         organizationId,
         childId: form.childId,
         childName: child?.fullName ?? '',

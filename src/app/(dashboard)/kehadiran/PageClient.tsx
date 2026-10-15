@@ -54,8 +54,7 @@ export default function KehadiranPage() {
     try {
       // Load active children
       const childQ = query(
-        collection(db, 'children'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'children'),
         where('status', '==', 'active'),
         orderBy('fullName')
       );
@@ -65,8 +64,7 @@ export default function KehadiranPage() {
 
       // Load attendance for selected date
       const attQ = query(
-        collection(db, 'attendance'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'attendance'),
         where('date', '==', dateStr)
       );
       const attSnap = await getDocs(attQ);
@@ -91,13 +89,13 @@ export default function KehadiranPage() {
     try {
       if (existing) {
         // Update existing
-        await updateDoc(doc(db, 'attendance', existing.id), {
+        await updateDoc(doc(db, 'organizations', organizationId, 'attendance', existing.id), {
           status,
           updatedAt: serverTimestamp(),
         });
       } else {
         // Create new
-        await addDoc(collection(db, 'attendance'), {
+        await addDoc(collection(db, 'organizations', organizationId, 'attendance'), {
           organizationId,
           childId,
           branchId: '',
@@ -131,7 +129,7 @@ export default function KehadiranPage() {
 
     try {
       if (existing) {
-        await updateDoc(doc(db, 'attendance', existing.id), {
+        await updateDoc(doc(db, 'organizations', organizationId, 'attendance', existing.id), {
           status: 'hadir',
           checkInTime: Timestamp.now(),
           checkInBy: user.uid,
@@ -141,7 +139,7 @@ export default function KehadiranPage() {
           updatedAt: serverTimestamp(),
         });
       } else {
-        await addDoc(collection(db, 'attendance'), {
+        await addDoc(collection(db, 'organizations', organizationId, 'attendance'), {
           organizationId,
           childId: child.id,
           branchId: child.branchId || '',
@@ -173,7 +171,7 @@ export default function KehadiranPage() {
     const att = attendance.get(child.id);
     if (!att) return;
     try {
-      await updateDoc(doc(db, 'attendance', att.id), {
+      await updateDoc(doc(db, 'organizations', organizationId, 'attendance', att.id), {
         checkOutTime: Timestamp.now(),
         updatedAt: serverTimestamp(),
       });

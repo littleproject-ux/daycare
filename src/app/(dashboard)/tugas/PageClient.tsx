@@ -82,13 +82,11 @@ export default function TugasPage() {
     try {
       const [taskSnap, staffSnap] = await Promise.all([
         getDocs(query(
-          collection(db, 'tasks'),
-          where('organizationId', '==', organizationId),
+          collection(db, 'organizations', organizationId, 'tasks'),
           orderBy('createdAt', 'desc')
         )),
         getDocs(query(
-          collection(db, 'staff'),
-          where('organizationId', '==', organizationId),
+          collection(db, 'organizations', organizationId, 'staff'),
           where('status', '==', 'aktif'),
           orderBy('fullName')
         )),
@@ -109,7 +107,7 @@ export default function TugasPage() {
     }
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'tasks'), {
+      await addDoc(collection(db, 'organizations', organizationId, 'tasks'), {
         organizationId,
         title: form.title,
         description: form.description,
@@ -135,7 +133,7 @@ export default function TugasPage() {
 
   async function updateTaskStatus(taskId: string, newStatus: TaskStatus) {
     try {
-      await updateDoc(doc(db, 'tasks', taskId), {
+      await updateDoc(doc(db, 'organizations', organizationId, 'tasks', taskId), {
         status: newStatus,
         ...(newStatus === 'done' ? { completedAt: serverTimestamp() } : { completedAt: null }),
       });

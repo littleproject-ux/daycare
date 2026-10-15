@@ -81,8 +81,7 @@ export default function StafPage() {
     setIsLoading(true);
     try {
       const q = query(
-        collection(db, 'staff'),
-        where('organizationId', '==', organizationId),
+        collection(db, 'organizations', organizationId, 'staff'),
         orderBy('fullName')
       );
       const snap = await getDocs(q);
@@ -143,10 +142,10 @@ export default function StafPage() {
       };
 
       if (editingStaff) {
-        await updateDoc(doc(db, 'staff', editingStaff.id), payload);
+        await updateDoc(doc(db, 'organizations', organizationId, 'staff', editingStaff.id), payload);
         toast({ title: `Data ${formData.fullName} diperbarui`, variant: 'success' });
       } else {
-        await addDoc(collection(db, 'staff'), {
+        await addDoc(collection(db, 'organizations', organizationId, 'staff'), {
           ...payload,
           userId: '',
           createdAt: serverTimestamp(),
