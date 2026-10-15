@@ -297,7 +297,7 @@ export function Sidebar({ orgName = 'Daycare', orgLogoUrl }: SidebarProps) {
         'lg:hidden fixed left-0 top-0 z-40 h-full w-64 shadow-2xl transform transition-transform duration-300',
         mobileOpen ? 'translate-x-0' : '-translate-x-full'
       )}>
-        <SidebarContent />
+        {SidebarContent()}
       </aside>
 
       {/* Desktop sidebar */}
@@ -305,7 +305,7 @@ export function Sidebar({ orgName = 'Daycare', orgLogoUrl }: SidebarProps) {
         'hidden lg:flex flex-col relative h-screen transition-all duration-300 shrink-0',
         collapsed ? 'w-16' : 'w-60'
       )}>
-        <SidebarContent />
+        {SidebarContent()}
       </aside>
     </>
   );
