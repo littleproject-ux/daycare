@@ -13,11 +13,25 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase (avoid re-initialization in Next.js hot reload)
-const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// Only initialize when API key is present (skips during static prerender at build time)
+let app: FirebaseApp;
+let auth: Auth;
+let db: Firestore;
+let storage: FirebaseStorage;
 
-export const auth: Auth = getAuth(app);
-export const db: Firestore = getFirestore(app);
-export const storage: FirebaseStorage = getStorage(app);
+if (firebaseConfig.apiKey) {
+  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  auth = getAuth(app);
+  db = getFirestore(app);
+  storage = getStorage(app);
+} else {
+  // Stub exports so imports don't crash during prerender —
+  // these will never be called in a real browser session.
+  app = null as unknown as FirebaseApp;
+  auth = null as unknown as Auth;
+  db = null as unknown as Firestore;
+  storage = null as unknown as FirebaseStorage;
+}
 
+export { auth, db, storage };
 export default app;
