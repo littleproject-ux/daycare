@@ -1,13 +1,28 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Sidebar } from '@/components/layout/sidebar';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, organizationId } = useAuth();
   const router = useRouter();
+  const [orgName, setOrgName] = useState<string>('Daycare');
+  const [orgLogoUrl, setOrgLogoUrl] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!organizationId || !db) return;
+    getDoc(doc(db, 'organizations', organizationId)).then((snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.name) setOrgName(data.name);
+        if (data.logoUrl) setOrgLogoUrl(data.logoUrl);
+      }
+    }).catch(() => {});
+  }, [organizationId]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -21,7 +36,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#fffcfa]">
-      {!showOverlay && <Sidebar />}
+      {!showOverlay && <Sidebar orgName={orgName} orgLogoUrl={orgLogoUrl} />}
       <main className="flex-1 overflow-y-auto">
         {/* children must always be in the tree — overlaid when not ready */}
         <div className={showOverlay ? 'invisible' : undefined}>
