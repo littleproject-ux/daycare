@@ -86,6 +86,7 @@ export default function AnakPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<ChildStatus | 'semua'>('semua');
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [editingChild, setEditingChild] = useState<Child | null>(null);
 
   const {
     register,
@@ -119,38 +120,77 @@ export default function AnakPage() {
     }
   }
 
+  function openEdit(child: Child, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditingChild(child);
+    // Pre-fill form
+    reset({
+      fullName: child.fullName,
+      preferredName: child.preferredName ?? '',
+      dateOfBirth: child.dateOfBirth
+        ? (child.dateOfBirth instanceof Object
+            ? (child.dateOfBirth as any).toDate?.().toISOString().slice(0, 10)
+            : String(child.dateOfBirth).slice(0, 10))
+        : '',
+      gender: child.gender as 'L' | 'P',
+      address: child.address ?? '',
+      bloodType: (child.bloodType ?? '') as any,
+      allergies: Array.isArray(child.allergies) ? child.allergies.join(', ') : '',
+      medicalNotes: child.medicalNotes ?? '',
+      emergencyContactName: child.emergencyContactName ?? '',
+      emergencyContactPhone: child.emergencyContactPhone ?? '',
+      emergencyContactRelation: child.emergencyContactRelation ?? '',
+    });
+    setShowAddDialog(true);
+  }
+
+  function closeDialog() {
+    setShowAddDialog(false);
+    setEditingChild(null);
+    reset();
+  }
+
   const onSubmit = async (data: ChildFormData) => {
     if (!organizationId) return;
     try {
       const dob = Timestamp.fromDate(new Date(data.dateOfBirth));
-      await addDoc(collection(db, 'organizations', organizationId, 'children'), {
-        organizationId,
-        branchId: '',
-        roomId: '',
+      const payload = {
         fullName: data.fullName,
         preferredName: data.preferredName || null,
         dateOfBirth: dob,
         gender: data.gender,
         address: data.address || null,
-        status: 'active' as ChildStatus,
         bloodType: data.bloodType || null,
         allergies: data.allergies ? data.allergies.split(',').map((s) => s.trim()) : [],
         medicalNotes: data.medicalNotes || null,
         emergencyContactName: data.emergencyContactName,
         emergencyContactPhone: data.emergencyContactPhone,
         emergencyContactRelation: data.emergencyContactRelation,
-        authorizedPickupContacts: [],
-        photoUrl: null,
-        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
-      toast({ title: 'Anak berhasil ditambahkan', variant: 'success' });
-      setShowAddDialog(false);
-      reset();
+      };
+
+      if (editingChild) {
+        await updateDoc(doc(db, 'organizations', organizationId, 'children', editingChild.id), payload);
+        toast({ title: 'Data anak berhasil diperbarui', variant: 'success' });
+      } else {
+        await addDoc(collection(db, 'organizations', organizationId, 'children'), {
+          ...payload,
+          organizationId,
+          branchId: '',
+          roomId: '',
+          status: 'active' as ChildStatus,
+          authorizedPickupContacts: [],
+          photoUrl: null,
+          createdAt: serverTimestamp(),
+        });
+        toast({ title: 'Anak berhasil ditambahkan', variant: 'success' });
+      }
+      closeDialog();
       loadChildren();
     } catch (e) {
       console.error(e);
-      toast({ title: 'Gagal menambahkan anak', variant: 'error' });
+      toast({ title: editingChild ? 'Gagal memperbarui data' : 'Gagal menambahkan anak', variant: 'error' });
     }
   };
 
@@ -287,9 +327,20 @@ export default function AnakPage() {
                               <p className="text-xs text-stone-400">"{child.preferredName}"</p>
                             )}
                           </div>
-                          <Badge variant={STATUS_VARIANTS[child.status]} className="shrink-0">
-                            {STATUS_LABELS[child.status]}
-                          </Badge>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Badge variant={STATUS_VARIANTS[child.status]}>
+                              {STATUS_LABELS[child.status]}
+                            </Badge>
+                            {can('edit') && (
+                              <button
+                                onClick={(e) => openEdit(child, e)}
+                                className="ml-1 p-1.5 rounded-lg text-stone-400 hover:text-coral-500 hover:bg-coral-50 transition-colors"
+                                title="Edit"
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -325,11 +376,11 @@ export default function AnakPage() {
         )}
       </div>
 
-      {/* Add Child Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      {/* Add / Edit Child Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Tambah Data Anak</DialogTitle>
+            <DialogTitle>{editingChild ? `Edit: ${editingChild.fullName}` : 'Tambah Data Anak'}</DialogTitle>
           </DialogHeader>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
@@ -364,6 +415,7 @@ export default function AnakPage() {
                   Jenis Kelamin <span className="text-red-500">*</span>
                 </label>
                 <Select
+                  value={watch('gender')}
                   onValueChange={(v) => setValue('gender', v as 'L' | 'P')}
                   required
                 >
@@ -379,7 +431,7 @@ export default function AnakPage() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-stone-700">Golongan Darah</label>
-                <Select onValueChange={(v) => setValue('bloodType', v as any)}>
+                <Select value={watch('bloodType') ?? ''} onValueChange={(v) => setValue('bloodType', v as any)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih..." />
                   </SelectTrigger>
@@ -448,11 +500,11 @@ export default function AnakPage() {
             </div>
 
             <DialogFooter className="gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => { setShowAddDialog(false); reset(); }}>
+              <Button type="button" variant="outline" onClick={closeDialog}>
                 Batal
               </Button>
               <Button type="submit" isLoading={isSubmitting}>
-                Simpan Data Anak
+                {editingChild ? 'Simpan Perubahan' : 'Simpan Data Anak'}
               </Button>
             </DialogFooter>
           </form>
