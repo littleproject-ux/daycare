@@ -66,13 +66,13 @@ export default function NotifikasiPage() {
   const [filter, setFilter] = useState<Filter>('Semua');
 
   useEffect(() => {
-    if (!userProfile?.uid || !organizationId || !db) {
+    if (!userProfile?.id || !organizationId || !db) {
       setLoading(false);
       return;
     }
     const q = query(
       collection(db, 'organizations', organizationId, 'notifications'),
-      where('userId', '==', userProfile.uid),
+      where('userId', '==', userProfile.id),
       orderBy('createdAt', 'desc'),
     );
     const unsub = onSnapshot(q, (snap) => {
@@ -80,7 +80,7 @@ export default function NotifikasiPage() {
       setLoading(false);
     }, () => setLoading(false));
     return unsub;
-  }, [userProfile?.uid, organizationId]);
+  }, [userProfile?.id, organizationId]);
 
   const markRead = async (id: string) => {
     if (!organizationId || !db) return;
